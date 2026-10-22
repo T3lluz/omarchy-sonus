@@ -171,7 +171,7 @@ class Engine:
 
     def status_text(self, snap: pipewire.Snapshot) -> str:
         if self.legacy:
-            return "Sonus desktop app is also running"
+            return "Routing paused"
         if not snap.channels or not snap.ready:
             if not self.settings.get("manage_graph", True):
                 return "Virtual channels are off"

@@ -1,20 +1,24 @@
 import QtQuick
+import qs.Commons
+import qs.Commons as Commons
 import "Eq.js" as Eq
 
-// One dB fader: vertical for a band, horizontal for the preamp.
+// One vertical dB fader, drawn the way PanelSlider draws a horizontal one:
+// a selected-fill track, a foreground fill growing from 0 dB, a round knob.
 //
-// `value` is the target; `shown` is what is drawn and eases toward it, so
-// presets, resets and the page entrance glide instead of snapping. Dragging
-// writes both directly.
+// `value` is the target; `shown` is what is drawn and eases toward it, so a
+// preset or a reset glides instead of snapping. Double-click zeroes the band,
+// the wheel moves it in half-dB steps.
 Item {
   id: slider
 
-  required property var theme
-  property color accent: theme.accent
-  property bool horizontal: false
+  property color foreground: Commons.Color.foreground
+  property color background: Commons.Color.background
+  property color trackColor: Style.selectedFillFor(foreground, Commons.Color.accent)
   property real limit: Eq.GAIN_LIMIT
   property real value: 0
   property bool dimmed: false
+  property bool hasCursor: false
   signal moved(real value)
 
   property bool dragging: false
@@ -26,9 +30,10 @@ Item {
   Component.onCompleted: shown = value
   Behavior on shown {
     enabled: !slider.instant && !slider.dragging
-    NumberAnimation { duration: 340; easing.type: Easing.OutCubic }
+    NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
   }
 
+  // Spread out from the 0 dB line into the saved curve.
   function replay() {
     instant = true
     shown = 0
@@ -43,62 +48,53 @@ Item {
     moved(v)
   }
 
-  readonly property real pad: theme.s(8)
-  readonly property real span: (horizontal ? width : height) - pad * 2
+  readonly property real knob: Math.max(12, Math.round(Style.spacing.controlHeight * 0.38))
+  readonly property real pad: knob / 2
+  readonly property real span: height - pad * 2
   readonly property real frac: (Math.max(-limit, Math.min(limit, shown)) + limit) / (2 * limit)
-  readonly property real pos: horizontal ? pad + span * frac : pad + span * (1 - frac)
+  readonly property real pos: pad + span * (1 - frac)
   readonly property real centre: pad + span / 2
-  readonly property real trackW: theme.s(5)
-  readonly property color fillColor: dimmed ? theme.faint : accent
+  readonly property real trackW: Math.max(4, Math.round(Style.spacing.controlHeight * 0.11))
+  readonly property bool hot: mouse.containsMouse || dragging || hasCursor
 
-  function valueAt(x, y) {
-    var c = horizontal ? x : y
-    var f = (c - pad) / Math.max(1, span)
-    if (!horizontal) f = 1 - f
+  function valueAt(y) {
+    var f = 1 - (y - pad) / Math.max(1, span)
     return Eq.snap((Math.max(0, Math.min(1, f)) * 2 - 1) * limit)
   }
 
+  opacity: dimmed ? 0.45 : 1
+
   Rectangle {
-    x: slider.horizontal ? slider.pad : (slider.width - width) / 2
-    y: slider.horizontal ? (slider.height - height) / 2 : slider.pad
-    width: slider.horizontal ? slider.span : slider.trackW
-    height: slider.horizontal ? slider.trackW : slider.span
-    radius: slider.trackW / 2
-    color: theme.track
+    x: (slider.width - width) / 2
+    y: slider.pad
+    width: slider.trackW
+    height: slider.span
+    radius: width / 2
+    color: slider.trackColor
   }
 
   Rectangle {
-    readonly property real a: Math.min(slider.centre, slider.pos)
-    readonly property real len: Math.abs(slider.pos - slider.centre)
-    visible: len > 0.5
-    x: slider.horizontal ? a : (slider.width - width) / 2
-    y: slider.horizontal ? (slider.height - height) / 2 : a
-    width: slider.horizontal ? len : slider.trackW
-    height: slider.horizontal ? slider.trackW : len
-    radius: slider.trackW / 2
-    color: slider.fillColor
+    readonly property real y0: Math.min(slider.centre, slider.pos)
+    visible: Math.abs(slider.pos - slider.centre) > 0.5
+    x: (slider.width - width) / 2
+    y: y0
+    width: slider.trackW
+    height: Math.abs(slider.pos - slider.centre)
+    radius: width / 2
+    color: slider.foreground
   }
 
   Rectangle {
-    readonly property real w: slider.horizontal ? theme.s(13) : theme.s(24)
-    readonly property real h: slider.horizontal ? theme.s(24) : theme.s(13)
-    readonly property real grow: slider.dragging || mouse.containsMouse ? theme.s(2) : 0
-    width: w + grow
-    height: h + grow
-    x: slider.horizontal ? slider.pos - width / 2 : (slider.width - width) / 2
-    y: slider.horizontal ? (slider.height - height) / 2 : slider.pos - height / 2
-    radius: theme.s(5)
-    color: theme.thumb
-    Behavior on width { NumberAnimation { duration: 110 } }
-    Behavior on height { NumberAnimation { duration: 110 } }
-
-    Rectangle {
-      anchors.centerIn: parent
-      width: slider.horizontal ? Math.max(2, theme.s(2.5)) : theme.s(10)
-      height: slider.horizontal ? theme.s(10) : Math.max(2, theme.s(2.5))
-      radius: Math.min(width, height) / 2
-      color: slider.fillColor
-    }
+    width: slider.knob
+    height: slider.knob
+    radius: width / 2
+    x: (slider.width - width) / 2
+    y: slider.pos - height / 2
+    color: slider.foreground
+    border.width: Math.max(1, Style.space(2))
+    border.color: slider.background
+    scale: slider.hot ? 1.15 : 1
+    Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
   }
 
   MouseArea {
@@ -108,19 +104,19 @@ Item {
     cursorShape: Qt.PointingHandCursor
     onPressed: function(event) {
       slider.dragging = true
-      slider.set(slider.valueAt(event.x, event.y))
+      slider.set(slider.valueAt(event.y))
       slider.shown = slider.value
     }
     onPositionChanged: function(event) {
       if (!slider.dragging) return
-      slider.set(slider.valueAt(event.x, event.y))
+      slider.set(slider.valueAt(event.y))
       slider.shown = slider.value
     }
     onReleased: slider.dragging = false
     onCanceled: slider.dragging = false
     onDoubleClicked: slider.set(0)
     onWheel: function(event) {
-      slider.wheelAcc += event.angleDelta.y !== 0 ? event.angleDelta.y : -event.angleDelta.x
+      slider.wheelAcc += event.angleDelta.y
       var steps = slider.wheelAcc > 0 ? Math.floor(slider.wheelAcc / 120) : Math.ceil(slider.wheelAcc / 120)
       if (steps === 0) return
       slider.wheelAcc -= steps * 120

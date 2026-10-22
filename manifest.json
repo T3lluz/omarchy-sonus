@@ -13,24 +13,13 @@
   ],
   "entryPoints": {
     "service": "Service.qml",
-    "barWidget": "BarWidget.qml"
+    "barWidget": "Panel.qml"
   },
   "barWidget": {
     "displayName": "Sonus",
-    "description": "Opens the Sonus mixer. Scroll for master volume, middle-click to mute.",
+    "description": "Sonar-style mixer in a bar panel: channel faders, app routing and per-category EQ. Scroll for master volume, middle-click to mute, right-click for settings.",
     "category": "Media",
     "allowMultiple": false,
-    "defaultSection": "right",
-    "defaults": {
-      "showLevel": false
-    },
-    "schema": [
-      {
-        "key": "showLevel",
-        "type": "boolean",
-        "label": "Show master volume in the bar",
-        "defaultValue": false
-      }
-    ]
+    "defaultSection": "right"
   }
 }

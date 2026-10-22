@@ -4,13 +4,13 @@ import Quickshell.Io
 import "ui/Eq.js" as Eq
 
 // The plugin's always-on half. It runs the engine (bin/sonus-engine), which
-// owns the virtual channels and keeps every app routed whether the mixer is
-// open or not, mirrors the engine's state for the window and the bar, and
-// answers `omarchy-shell sonus toggle` for the hotkey.
+// owns the virtual channels and keeps every app routed whether the panel is
+// open or not, and mirrors the engine's state for the panel in the bar.
 //
-// The window lives here rather than in the bar widget so it is not the
-// bar's: with the button taken out of the bar, routing, the hotkey and the
-// window all keep working.
+// The panel itself is the bar widget (Panel.qml), one per monitor; they all
+// read this one service, so there is one engine and one poller however many
+// bars there are. `omarchy-shell sonus toggle` goes through the shell, which
+// opens the panel on the focused monitor.
 Scope {
   id: root
 
@@ -46,7 +46,6 @@ Scope {
   property var routes: ({})
   property var eqs: ({})
   property bool manageGraph: true
-  property var savedPos: null
   property string noticeText: ""
   property bool noticeError: false
   property var update: ({ state: "unknown", local: "", busy: false, applying: false })
@@ -55,8 +54,8 @@ Scope {
   property var pendingRoutes: ({})
 
   readonly property var master: channels.master || null
-  readonly property real masterVolume: master ? master.volume : 0
-  readonly property bool masterMuted: master ? master.muted : false
+  readonly property real masterVolume: master ? overridden("vol", "master", master.volume) : 0
+  readonly property bool masterMuted: master ? overridden("mute", "master", master.muted) : false
 
   function send(message) {
     if (engine.running) engine.write(JSON.stringify(message) + "\n")
@@ -168,7 +167,6 @@ Scope {
       for (var k in stored) next[k] = Eq.normalized(stored[k])
       eqs = next
       manageGraph = msg.manageGraph !== false
-      savedPos = msg.pos && typeof msg.pos === "object" ? msg.pos : null
       configLoaded = true
     } else if (msg.type === "update") {
       var u = {}
@@ -197,14 +195,56 @@ Scope {
     return app ? (app.members && app.members.length ? app.members : [app.node_id]) : []
   }
 
+  // What was just set wins over snapshots for a moment: a poll taken before
+  // the write landed still carries the old value, and showing it would
+  // bounce the slider back.
+  property var overrides: ({})
+
+  function override(field, key, value) {
+    var next = {}
+    for (var k in overrides) next[k] = overrides[k]
+    next[field + ":" + key] = { value: value, at: Date.now() }
+    overrides = next
+    overrideTimer.restart()
+  }
+
+  function overridden(field, key, fallback) {
+    var o = overrides[field + ":" + key]
+    return o && Date.now() - o.at < 1600 ? o.value : fallback
+  }
+
+  Timer {
+    id: overrideTimer
+    interval: 1700
+    onTriggered: root.overrides = ({})
+  }
+
+  function volumeOf(key) {
+    var node = channels[key] || appInfo[key]
+    return overridden("vol", key, node ? node.volume : 0)
+  }
+
+  function mutedOf(key) {
+    var node = channels[key] || appInfo[key]
+    return overridden("mute", key, node ? node.muted : false)
+  }
+
   function setVolume(key, value) {
     var ids = idsFor(key)
-    if (ids.length) send({ cmd: "volume", ids: ids, value: Math.max(0, Math.min(1, value)) })
+    value = Math.max(0, Math.min(1, value))
+    override("vol", key, value)
+    if (ids.length) send({ cmd: "volume", ids: ids, value: value })
   }
 
   function setMute(key, value) {
     var ids = idsFor(key)
+    override("mute", key, !!value)
     if (ids.length) send({ cmd: "mute", ids: ids, value: !!value })
+  }
+
+  function adjustVolume(key, delta) {
+    if (mutedOf(key) && delta > 0) setMute(key, false)
+    setVolume(key, volumeOf(key) + delta)
   }
 
   function route(key, channel) {
@@ -230,11 +270,6 @@ Scope {
     send({ cmd: "setting", key: "manage_graph", value: value })
   }
 
-  function savePos(x, y) {
-    savedPos = { x: Math.round(x), y: Math.round(y) }
-    send({ cmd: "setting", key: "panel_pos", value: savedPos })
-  }
-
   function takeOver() { send({ cmd: "takeover" }) }
 
   // Hourly at most unless asked, as the desktop app did.
@@ -253,15 +288,20 @@ Scope {
   }
 
   function nudgeMaster(steps) {
-    if (!master) return
-    if (masterMuted) setMute("master", false)
-    setVolume("master", masterVolume + steps * 0.04)
-    send({ cmd: "refresh" })
+    if (master) adjustVolume("master", steps * 0.05)
   }
 
   function toggleMasterMute() {
-    if (!master) return
-    setMute("master", !masterMuted)
+    if (master) setMute("master", !mutedOf("master"))
+  }
+
+  function appsIn(channel) {
+    var out = []
+    for (var i = 0; i < appsModel.count; i++) {
+      var row = appsModel.get(i)
+      if (effectiveChannel(row.key, row.channel) === channel) out.push({ key: row.key, name: row.name, icon: row.icon })
+    }
+    return out
   }
 
   // ---- the engine process -----------------------------------------------------
@@ -297,34 +337,24 @@ Scope {
     onTriggered: if (root.sourceDir !== "") engine.running = true
   }
 
-  // ---- window -------------------------------------------------------------------
+  // ---- panel ------------------------------------------------------------------
 
-  readonly property bool opened: windowLoader.item ? windowLoader.item.open : false
+  // Panels report in, so the engine polls fast only while one is showing.
+  property int openPanels: 0
+  readonly property bool opened: openPanels > 0
   onOpenedChanged: send({ cmd: "active", value: opened })
 
-  function show() {
-    if (!windowLoader.item) {
-      windowLoader.pendingShow = true
-      windowLoader.setSource(Qt.resolvedUrl("Mixer.qml"), { service: root })
-      return
-    }
-    windowLoader.item.show()
-  }
-  function hide() { if (windowLoader.item) windowLoader.item.hide() }
-  function open() { show() }
-  function close() { hide() }
-  function toggle() {
-    if (opened) hide()
-    else show()
-  }
+  // A view to open on ("eq:chat", "settings"), set before the shell opens
+  // the panel and taken by whichever panel opens.
+  property string requestedView: ""
 
-  Loader {
-    id: windowLoader
-    property bool pendingShow: false
-    onLoaded: {
-      if (item && pendingShow) item.show()
-      pendingShow = false
-    }
+  function show() { if (shell && typeof shell.summon === "function") shell.summon(pluginId, "{}") }
+  function hide() { if (shell && typeof shell.hide === "function") shell.hide(pluginId) }
+  function toggle() { if (shell && typeof shell.toggle === "function") shell.toggle(pluginId, "{}") }
+  function showView(view) {
+    requestedView = view
+    if (opened) requestedViewChanged()
+    else show()
   }
 
   IpcHandler {
@@ -334,10 +364,13 @@ Scope {
     function hide(): void { root.hide() }
     function open(): void { root.show() }
     function close(): void { root.hide() }
+    function eq(category: string): void { root.showView("eq:" + category) }
+    function settings(): void { root.showView("settings") }
     function status(): string {
       return JSON.stringify({
         engine: root.engineUp,
         opened: root.opened,
+        panels: root.openPanels,
         status: root.status,
         legacy: root.legacy,
         master: root.master ? Math.round(root.masterVolume * 100) : null,
