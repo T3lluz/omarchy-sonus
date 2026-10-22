@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.t3lluz.sonus",
+  "name": "Sonus",
+  "version": "1.0.0",
+  "author": "fredde",
+  "license": "MIT",
+  "description": "Sonar-style volume mixer for PipeWire: Master, Game, Chat, Media and Aux channels, drag-and-drop app routing, and a 10-band equalizer per category.",
+  "homepage": "https://github.com/T3lluz/omarchy-sonus",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Sonus",
+    "description": "Opens the Sonus mixer. Scroll for master volume, middle-click to mute.",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "showLevel": false
+    },
+    "schema": [
+      {
+        "key": "showLevel",
+        "type": "boolean",
+        "label": "Show master volume in the bar",
+        "defaultValue": false
+      }
+    ]
+  }
+}

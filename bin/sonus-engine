@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Sonus engine entry point. Run with `python3 -I` so nothing from the
+current directory or the user site can shadow the stdlib."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine"))
+
+from sonus.engine import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
