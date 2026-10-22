@@ -366,6 +366,12 @@ Scope {
     function close(): void { root.hide() }
     function eq(category: string): void { root.showView("eq:" + category) }
     function settings(): void { root.showView("settings") }
+    // The panel's Switch: stop the Sonus desktop app and its autostart.
+    // Also useful when the app is not running but would start at login.
+    function takeover(): string {
+      root.takeOver()
+      return "switching"
+    }
     function status(): string {
       return JSON.stringify({
         engine: root.engineUp,

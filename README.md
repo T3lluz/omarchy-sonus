@@ -26,7 +26,7 @@ o.bind("CTRL + ALT + V", "Sonus", "omarchy-shell sonus toggle")
 | Sliders icon on a channel | That channel's EQ |
 | `j`/`k`, `h`/`l`, `m`, `e`, `1`-`4`/`0`, `s`, `esc` | Move, volume, mute, EQ, assign, settings, back |
 
-`omarchy-shell sonus eq chat` and `omarchy-shell sonus settings` open a view directly.
+`omarchy-shell sonus eq chat` and `omarchy-shell sonus settings` open a view directly. `omarchy-shell sonus takeover` retires the Sonus desktop app (stops it, removes its autostart), the same as the panel's **Switch**.
 
 ## How it works
 
