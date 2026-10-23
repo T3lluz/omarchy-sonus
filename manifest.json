@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.t3lluz.sonus",
   "name": "Sonus",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "fredde",
   "license": "MIT",
   "description": "Sonar-style volume mixer for PipeWire: Master, Game, Chat, Media and Aux channels, drag-and-drop app routing, and a 10-band equalizer per category.",

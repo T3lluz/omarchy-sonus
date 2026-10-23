@@ -5,6 +5,9 @@ current directory or the user site can shadow the stdlib."""
 import sys
 from pathlib import Path
 
+# Bytecode would land in engine/sonus/__pycache__, inside the plugin folder,
+# and the shell reloads every plugin when a file appears there.
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine"))
 
 from sonus.engine import main  # noqa: E402
