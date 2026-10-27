@@ -6,7 +6,7 @@ How Sonus is put together, for anyone (or any agent) changing it. The user-facin
 
 - `Service.qml`: always loaded. Runs `bin/sonus-engine` and talks JSON lines with it; mirrors its state for the panel; owns the `sonus` IPC target.
 - `Panel.qml`, `ui/`: the bar entry and panel, once per monitor, all reading the one service. `ui/Eq.js` is the panel's copy of the EQ model.
-- `engine/sonus/`: the engine (Python, stdlib only). `graph.py` renders and runs the filter-chain graph as `sonus-graph.service`; `pipewire.py` reads and moves streams; `eq.py` is the EQ model; `config.py` the settings in `~/.config/sonusdeck/settings.json`, shared with the Sonus desktop app.
+- `engine/sonus/`: the engine (Python, stdlib only). `graph.py` renders and runs the filter-chain graph as `sonus-graph.service`; `pipewire.py` reads and moves streams; `eq.py` is the EQ model; `profiles.py` is the per-output-device volume and EQ; `config.py` the settings in `~/.config/sonusdeck/settings.json`, shared with the Sonus desktop app.
 - `bin/sonus-engine`: the entry point. It sets `sys.dont_write_bytecode` so `engine/` never gains a `__pycache__`.
 
 ## Test

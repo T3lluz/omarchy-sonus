@@ -92,3 +92,70 @@ function responseDb(freq, gains, preamp) {
   for (var i = 0; i < BAND_COUNT; i++) total += peakingDb(freq, BAND_FREQS[i], gains[i] || 0, BAND_Q, 48000)
   return total
 }
+
+function _gains(gains) {
+  var out = []
+  for (var i = 0; i < BAND_COUNT; i++) out.push(Number(gains && gains[i]) || 0)
+  return out
+}
+
+// Fritsch–Carlson slopes. A plain cubic through the faders overshoots, which
+// is the rollercoaster between two bands; these slopes are flattened wherever
+// that would happen, so the line stays between the points it joins.
+function _slopes(gains) {
+  var d = []
+  for (var i = 0; i < BAND_COUNT - 1; i++) d.push(gains[i + 1] - gains[i])
+  var m = []
+  m[0] = d[0]
+  m[BAND_COUNT - 1] = d[BAND_COUNT - 2]
+  for (var j = 1; j < BAND_COUNT - 1; j++) {
+    if (d[j - 1] * d[j] <= 0) m[j] = 0
+    else m[j] = (d[j - 1] + d[j]) / 2
+  }
+  for (var k = 0; k < BAND_COUNT - 1; k++) {
+    if (Math.abs(d[k]) < 1e-9) {
+      m[k] = 0
+      m[k + 1] = 0
+      continue
+    }
+    var a = m[k] / d[k]
+    var b = m[k + 1] / d[k]
+    var h = a * a + b * b
+    if (h > 9) {
+      var scale = 3 / Math.sqrt(h)
+      m[k] = scale * a * d[k]
+      m[k + 1] = scale * b * d[k]
+    }
+  }
+  return m
+}
+
+function _sample(index, gains, slopes) {
+  if (index <= 0) return gains[0]
+  if (index >= BAND_COUNT - 1) return gains[BAND_COUNT - 1]
+  var i = Math.floor(index)
+  var t = index - i
+  var t2 = t * t
+  var t3 = t2 * t
+  var h00 = 2 * t3 - 3 * t2 + 1
+  var h10 = t3 - 2 * t2 + t
+  var h01 = -2 * t3 + 3 * t2
+  var h11 = t3 - t2
+  return h00 * gains[i] + h10 * slopes[i] + h01 * gains[i + 1] + h11 * slopes[i + 1]
+}
+
+// Gain of the drawn curve at a band position. 0 is the first knob, 9 the
+// last. It passes through every fader and does not dip or peak between them.
+function curveAt(index, gains) {
+  var values = _gains(gains)
+  return _sample(index, values, _slopes(values))
+}
+
+function curveSeries(gains, steps) {
+  var values = _gains(gains)
+  var slopes = _slopes(values)
+  var count = Math.max(1, steps)
+  var series = []
+  for (var k = 0; k <= count; k++) series.push(_sample(-0.5 + BAND_COUNT * k / count, values, slopes))
+  return series
+}

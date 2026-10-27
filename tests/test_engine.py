@@ -13,7 +13,7 @@ _config_home = tempfile.mkdtemp(prefix="sonus-test-")
 os.environ["XDG_CONFIG_HOME"] = _config_home
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine"))
 
-from sonus import config, eq, graph, pipewire  # noqa: E402
+from sonus import config, eq, graph, pipewire, profiles  # noqa: E402
 
 
 class ChannelEqTest(unittest.TestCase):
@@ -80,6 +80,91 @@ class PipewireHelpersTest(unittest.TestCase):
         key, label, icon, binary = pipewire._app_identity({"application.process.binary": "Discord", "application.name": "WEBRTC VoiceEngine"})
         self.assertEqual((key, label, icon, binary), ("discord", "WEBRTC VoiceEngine", "discord", "Discord"))
         self.assertEqual(pipewire._app_identity({})[1], "App")
+
+
+class ProfileTest(unittest.TestCase):
+    def test_airpods_share_a_key_across_bluetooth_profiles(self):
+        a2dp = profiles.profile_key("bluez_output.AA_BB_CC_DD_EE_FF.1")
+        headset = profiles.profile_key("bluez_output.AA_BB_CC_DD_EE_FF.2")
+        self.assertEqual(a2dp, "bluez:aa:bb:cc:dd:ee:ff")
+        self.assertEqual(a2dp, headset)
+
+    def test_laptop_speakers_and_hdmi_are_different_devices(self):
+        speakers = profiles.profile_key("alsa_output.pci-0000_00_1f.3.analog-stereo")
+        hdmi = profiles.profile_key("alsa_output.pci-0000_00_1f.3.hdmi-stereo")
+        self.assertNotEqual(speakers, hdmi)
+        self.assertTrue(speakers.startswith("alsa:"))
+
+    def test_friendly_label_strips_the_card_prefix(self):
+        self.assertEqual(profiles.friendly_label("Built-in Audio Analog Stereo"), "Analog Stereo")
+        self.assertEqual(profiles.friendly_label("sof-soundwire Speaker"), "Speaker")
+
+    def test_first_visit_keeps_what_is_playing_and_the_next_visit_restores(self):
+        stored = {}
+        live = profiles.from_live("Laptop", 0.4, False, {}, {"game": eq.ChannelEq(True, 0, [1.0] * 10)})
+        chosen, apply = profiles.adopt(stored, "alsa:analog", live)
+        self.assertFalse(apply)
+        self.assertEqual(chosen.volume, 0.4)
+        self.assertEqual(chosen.eqs["game"].gains[0], 1.0)
+        chosen.volume = 0.2
+        stored["alsa:analog"] = chosen
+        again, apply = profiles.adopt(stored, "alsa:analog", live)
+        self.assertTrue(apply)
+        self.assertEqual(again.volume, 0.2)
+        # The restored curve is a copy, so editing it leaves the saved one alone.
+        again.eqs["game"].gains[0] = 9
+        self.assertEqual(stored["alsa:analog"].eqs["game"].gains[0], 1.0)
+
+    def test_round_trip(self):
+        original = profiles.from_live("AirPods", 0.35, True, {}, {"chat": eq.ChannelEq(True, -1, [2.0] * 10)})
+        settings = {}
+        profiles.store(settings, {"bluez:aa": original})
+        loaded = profiles.load(settings)["bluez:aa"]
+        self.assertEqual(loaded.label, "AirPods")
+        self.assertTrue(loaded.muted)
+        self.assertEqual(loaded.eqs["chat"].gains, [2.0] * 10)
+        self.assertEqual(loaded.channels["game"].volume, 1.0)
+
+    def test_output_list_hides_sonus_and_easyeffects_and_marks_the_hardware(self):
+        records = [
+            {"id": 1, "name": "easyeffects_sink", "description": "EasyEffects", "nick": "", "profile": "", "media_class": "Audio/Sink", "icon": ""},
+            {"id": 2, "name": "alsa_output.pci-0000_00_1f.3.analog-stereo", "description": "Built-in Audio Analog Stereo", "nick": "Speakers", "profile": "", "media_class": "Audio/Sink", "icon": "audio-card", "volume": 0.5, "muted": False},
+            {"id": 3, "name": "bluez_output.AA_BB_CC_DD_EE_FF.1", "description": "AirPods Pro", "nick": "", "profile": "", "media_class": "Audio/Sink", "icon": "audio-headphones", "volume": 0.3, "muted": False},
+            {"id": 4, "name": "sonusdeck_game", "description": "Sonus Game", "nick": "", "profile": "", "media_class": "Audio/Sink", "icon": ""},
+            {"id": 5, "name": "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor", "description": "Monitor", "nick": "", "profile": "", "media_class": "Audio/Source", "icon": ""},
+            {"id": 6, "name": "alsa_input.pci-0000_00_1f.3.analog-stereo", "description": "Built-in Audio Analog Stereo", "nick": "Microphone", "profile": "", "media_class": "Audio/Source", "icon": "audio-input-microphone", "volume": 0.8, "muted": False},
+        ]
+        outputs, inputs, label, form = pipewire.build_endpoints(
+            records, {}, "easyeffects_sink", "alsa_output.pci-0000_00_1f.3.analog-stereo",
+            "alsa_input.pci-0000_00_1f.3.analog-stereo",
+        )
+        names = [item.name for item in outputs]
+        self.assertEqual(names, [
+            "alsa_output.pci-0000_00_1f.3.analog-stereo",
+            "bluez_output.AA_BB_CC_DD_EE_FF.1",
+        ])
+        self.assertTrue(outputs[0].active)
+        self.assertFalse(outputs[1].active)
+        self.assertEqual(outputs[0].label, "Speakers")
+        self.assertEqual(outputs[1].form, "headphones")
+        self.assertEqual(outputs[1].key, "bluez:aa:bb:cc:dd:ee:ff")
+        self.assertEqual(label, "Speakers")
+        self.assertEqual(form, "speaker")
+        self.assertEqual([item.name for item in inputs], ["alsa_input.pci-0000_00_1f.3.analog-stereo"])
+        self.assertTrue(inputs[0].active)
+        self.assertEqual(inputs[0].label, "Microphone")
+
+    def test_unavailable_sink_is_hidden(self):
+        records = [
+            {"id": 2, "name": "alsa_output.pci-analog", "description": "Speakers", "nick": "", "profile": "", "media_class": "Audio/Sink", "icon": ""},
+            {"id": 7, "name": "omarchy_speaker_tuning", "description": "Laptop", "nick": "", "profile": "", "media_class": "Audio/Sink", "icon": ""},
+        ]
+        outputs, _, label, _ = pipewire.build_endpoints(
+            records, {"alsa_output.pci-analog": False}, "omarchy_speaker_tuning", "alsa_output.pci-analog", "",
+        )
+        self.assertEqual([item.name for item in outputs], ["omarchy_speaker_tuning"])
+        self.assertTrue(outputs[0].active)
+        self.assertEqual(label, "Laptop")
 
 
 class SettingsTest(unittest.TestCase):

@@ -88,7 +88,7 @@ Column {
 
       Caption {
         host: view.host
-        text: "Provide the Game, Chat, Media and Aux devices."
+        text: "Game, Chat, Media and Aux. Each output keeps its own volume and equalizer."
       }
     }
 
@@ -157,9 +157,10 @@ Column {
       x: Style.space(8)
       y: Style.space(6)
       width: parent.width - Style.space(16)
+      // Broken by hand: wrapping left the closing paren alone on a line.
       wrapMode: Text.WrapAnywhere
       textFormat: Text.PlainText
-      text: 'o.bind("CTRL + ALT + V", "Sonus", "omarchy-shell sonus toggle")'
+      text: 'o.bind("CTRL + ALT + V", "Sonus",\n       "omarchy-shell sonus toggle")'
       color: view.host.fg
       font.family: view.host.fontFamily
       font.pixelSize: Style.font.caption

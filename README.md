@@ -2,9 +2,9 @@
   <img src="assets/icon.svg" width="72" height="72" alt="Sonus" />
   <h1>Sonus</h1>
   <p>A Sonar-style mixer for <b>PipeWire</b> that drops down from the Omarchy bar:<br/>
-  <b>Master</b> plus <b>Game, Chat, Media and Aux</b> channels, drag-and-drop app routing, and a 10-band EQ per channel.</p>
+  system output and input, <b>Game, Chat, Media and Aux</b> channels, a saved mix per device, and a 10-band EQ.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v1.1.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.2.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-a58bff" />
     <img alt="PipeWire" src="https://img.shields.io/badge/PipeWire-filter--chain-a58bff" />
     <a href="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml/badge.svg" /></a>
@@ -16,9 +16,11 @@
 
 ## Features
 
-- **Channels:** Game, Chat, Media and Aux are real PipeWire sinks, each with its own volume and mute, all mixed into your output. Master is the output itself.
-- **Routing:** drag an app onto a channel, or pick one from its button. Routes are remembered and enforced whenever the app starts playing again, panel open or not. Drop an app on Master to unassign it.
-- **EQ per channel:** ten octave bands from 32 Hz to 16 kHz with a preamp, presets (Flat, Bass, Voice, Treble, Steps), the live response curve, and a bypass switch. Changes apply to the running graph with no gap.
+- **Output and input:** the system volume, mute, and the device list live in the panel. Choosing an output switches the system to it. The microphone has its own level, mute and a live meter.
+- **A mix per device:** AirPods keep one volume and equalizer, the laptop speakers keep another. The first time a device is used it starts from the mix you already have; after that, coming back restores it.
+- **Channels:** Game, Chat, Media and Aux are real PipeWire sinks, each with its own volume and mute, all mixed into the selected output.
+- **Routing:** drag an app onto a channel, or pick one from its button. Routes are remembered and enforced whenever the app starts playing again, panel open or not. Drop an app on the Output section to unassign it.
+- **EQ per channel:** ten octave bands from 32 Hz to 16 kHz with a preamp, presets (Flat, Bass, Voice, Treble, Steps), a smooth curve through the faders, and a bypass switch. Changes apply to the running graph with no gap. The curve is saved with the output device.
 - **Keyboard first:** every row, fader and band is reachable without the mouse.
 - **No gap on reload:** the channels run as the user unit `sonus-graph.service`, so a shell restart or plugin reload adopts the running graph instead of rebuilding it.
 - **Plays well with EasyEffects:** channel outputs land in EasyEffects when it runs, and Sonus keeps it from EQ-ing twice or stealing streams.
@@ -43,9 +45,12 @@ o.bind("CTRL + ALT + V", "Sonus", "omarchy-shell sonus toggle")
 | Input | Action |
 |---|---|
 | Click the bar icon | Open the panel |
-| Scroll / middle-click the icon | Master volume / mute |
+| Scroll / middle-click the icon | Output volume / mute |
+| Click the current output or input | Show the other devices |
+| Click an output | Use that device, and its saved volume and EQ |
+| Click an input | Use that microphone |
 | Right-click the icon | Settings |
-| Drag an app onto a channel | Assign it (drop on Master to unassign) |
+| Drag an app onto a channel | Assign it (drop on Output to unassign) |
 | App's channel button | Pick a channel |
 | Sliders icon on a channel | That channel's EQ |
 | `j`/`k`, `h`/`l` | Move, volume |

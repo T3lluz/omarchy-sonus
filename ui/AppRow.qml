@@ -25,7 +25,8 @@ CursorSurface {
   fill: host.hoverFill
   currentFill: host.selectedFill
   opacity: host.dragKey === key ? 0.45 : 1
-  implicitHeight: column.implicitHeight + Style.spacing.lg
+  implicitHeight: column.implicitHeight + Style.spacing.xl
+  height: implicitHeight
   onHasCursorChanged: if (hasCursor) host.ensureVisible(row)
 
   HoverHandler {
@@ -39,7 +40,7 @@ CursorSurface {
     anchors.verticalCenter: parent.verticalCenter
     anchors.leftMargin: Style.space(6)
     anchors.rightMargin: Style.space(6)
-    spacing: Style.space(4)
+    spacing: Style.space(2)
 
     Item {
       width: parent.width
@@ -155,23 +156,6 @@ CursorSurface {
         font.family: row.host.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: true
-      }
-    }
-
-    Row {
-      width: parent.width
-      spacing: Style.space(8)
-
-      Text {
-        id: muteGlyph
-        width: Style.space(22)
-        anchors.verticalCenter: parent.verticalCenter
-        horizontalAlignment: Text.AlignHCenter
-        text: row.muted ? Glyphs.volumeOff : Glyphs.volumeHigh
-        color: row.host.fg
-        opacity: row.muted ? 0.5 : 0.8
-        font.family: row.host.fontFamily
-        font.pixelSize: Style.font.body
 
         MouseArea {
           anchors.fill: parent
@@ -180,26 +164,28 @@ CursorSurface {
           onClicked: row.service.setMute(row.key, !row.muted)
         }
       }
+    }
 
-      PanelSlider {
-        id: slider
-        bar: row.host.bar
-        width: parent.width - muteGlyph.width - Style.space(8)
-        minimum: 0
-        maximum: 1
-        step: 0.01
-        value: row.muted ? 0 : row.volume
-        opacity: row.muted ? 0.5 : 1
-        onMoved: function(v) {
-          if (row.muted) row.service.setMute(row.key, false)
-          row.service.setVolume(row.key, v)
-        }
-        onRightClicked: row.service.setMute(row.key, !row.muted)
+    // Starts under the name, so the icon column stays a clean edge.
+    PanelSlider {
+      id: slider
+      bar: row.host.bar
+      x: name.x
+      width: parent.width - x
+      minimum: 0
+      maximum: 1
+      step: 0.01
+      value: row.muted ? 0 : row.volume
+      opacity: row.muted ? 0.5 : 1
+      onMoved: function(v) {
+        if (row.muted) row.service.setMute(row.key, false)
+        row.service.setVolume(row.key, v)
+      }
+      onRightClicked: row.service.setMute(row.key, !row.muted)
 
-        WheelHandler {
-          acceptedDevices: PointerDevice.Mouse
-          onWheel: function(event) { row.host.wheelVolume(row.key, event.angleDelta.y) }
-        }
+      WheelHandler {
+        acceptedDevices: PointerDevice.Mouse
+        onWheel: function(event) { row.host.wheelVolume(row.key, event.angleDelta.y) }
       }
     }
 

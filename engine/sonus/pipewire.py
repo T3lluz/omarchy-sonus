@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from dataclasses import asdict, dataclass, field
 
 from . import eq as eqmod
+from . import profiles
 from .config import NODE_PREFIX, SINK_CHANNELS
 
 STREAM_CLASSES = ("Stream/Output/Audio",)
@@ -71,11 +73,42 @@ class AppStream:
 
 
 @dataclass
+class Endpoint:
+    """One hardware output or input the panel can select."""
+
+    node_id: int
+    name: str
+    label: str
+    volume: float
+    muted: bool
+    form: str
+    key: str
+    active: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.node_id,
+            "name": self.name,
+            "label": self.label,
+            "volume": round(self.volume, 4),
+            "muted": self.muted,
+            "form": self.form,
+            "key": self.key,
+            "active": self.active,
+        }
+
+
+@dataclass
 class Snapshot:
     channels: dict[str, NodeState] = field(default_factory=dict)
     apps: list[AppStream] = field(default_factory=list)
     output_serials: dict[str, int] = field(default_factory=dict)
+    outputs: list[Endpoint] = field(default_factory=list)
+    inputs: list[Endpoint] = field(default_factory=list)
     default_sink: str = ""
+    volume_sink: str = ""
+    output_label: str = ""
+    output_form: str = "speaker"
     mix_target: str = ""
     ready: bool = False
 
@@ -83,7 +116,12 @@ class Snapshot:
         return {
             "channels": {key: asdict(state) for key, state in self.channels.items()},
             "apps": [asdict(app) for app in self.apps],
+            "outputs": [item.to_dict() for item in self.outputs],
+            "inputs": [item.to_dict() for item in self.inputs],
             "defaultSink": self.default_sink,
+            "volumeSink": self.volume_sink,
+            "outputLabel": self.output_label,
+            "outputForm": self.output_form,
             "mixTarget": self.mix_target,
             "ready": self.ready,
         }
@@ -146,6 +184,130 @@ def default_sink_name() -> str:
     return _run(["pactl", "get-default-sink"]).strip()
 
 
+def default_source_name() -> str:
+    return _run(["pactl", "get-default-source"]).strip()
+
+
+_volume_sink_cache: dict = {"at": 0.0, "default": "", "name": ""}
+_availability_cache: dict = {"at": 0.0, "data": {}}
+
+
+def resolve_volume_sink(default: str) -> str:
+    """The sink whose volume is the loudness of the current output.
+
+    A tuning or EasyEffects can be the default without being where the level
+    lives. `omarchy-audio-output-sink` walks that chain to the hardware.
+    """
+    now = time.monotonic()
+    cached = _volume_sink_cache
+    if cached["default"] == default and cached["name"] and now - cached["at"] < 0.4:
+        return str(cached["name"])
+    resolved = _run(["omarchy-audio-output-sink"], timeout=3.0).strip() or default
+    cached["at"] = now
+    cached["default"] = default
+    cached["name"] = resolved
+    return resolved
+
+
+def sink_availability() -> dict[str, bool]:
+    now = time.monotonic()
+    cached = _availability_cache
+    if now - float(cached["at"]) < 5.0:
+        return cached["data"]
+    found = profiles.parse_availability(_run(["omarchy-audio-sink-availability"], timeout=3.0))
+    cached["at"] = now
+    cached["data"] = found
+    return found
+
+
+def _plain_records(nodes: list[tuple[dict, dict, dict]]) -> list[dict]:
+    records = []
+    for obj, _info, props in nodes:
+        records.append({
+            "id": int(obj.get("id") or 0),
+            "name": str(props.get("node.name") or ""),
+            "description": str(props.get("node.description") or ""),
+            "nick": str(props.get("node.nick") or ""),
+            "profile": str(props.get("device.profile.description") or ""),
+            "media_class": str(props.get("media.class") or ""),
+            "icon": str(props.get("device.icon-name") or ""),
+        })
+    return records
+
+
+def build_endpoints(
+    records: list[dict],
+    availability: dict[str, bool],
+    default_sink: str,
+    volume_sink: str,
+    default_source: str,
+) -> tuple[list[Endpoint], list[Endpoint], str, str]:
+    """Outputs and inputs for the panel, plus the label and glyph of the current output.
+
+    Sonus' own channels and EasyEffects are left out: picking one would bypass
+    the mixer. A sink marked unavailable (the speakers behind a tuning) is
+    left out too. When the default itself is hidden, the resolved hardware
+    sink is the one shown as current.
+    """
+    availability = availability or {}
+    outputs: list[Endpoint] = []
+    inputs: list[Endpoint] = []
+    default_hidden = profiles.is_hidden_output(default_sink)
+    for record in records:
+        media = record.get("media_class") or ""
+        name = record.get("name") or ""
+        if not name:
+            continue
+        if media == "Audio/Sink":
+            if profiles.is_hidden_output(name) or availability.get(name) is False:
+                continue
+            kind = "sink"
+        elif media == "Audio/Source":
+            if profiles.is_hidden_input(name):
+                continue
+            kind = "source"
+        else:
+            continue
+        volume = float(record.get("volume", 1.0) or 0.0)
+        muted = bool(record.get("muted", False))
+        endpoint = Endpoint(
+            node_id=int(record.get("id") or 0),
+            name=name,
+            label=profiles.endpoint_label(record),
+            volume=volume,
+            muted=muted,
+            form=profiles.device_form(name, str(record.get("description") or ""), str(record.get("icon") or ""), kind),
+            key=profiles.profile_key(name),
+            active=(name == default_sink or (default_hidden and bool(volume_sink) and name == volume_sink))
+            if kind == "sink" else name == default_source,
+        )
+        if kind == "sink":
+            outputs.append(endpoint)
+        else:
+            inputs.append(endpoint)
+    label, form = profiles.describe(volume_sink, records, "sink")
+    for endpoint in outputs:
+        if endpoint.active:
+            label, form = endpoint.label, endpoint.form
+            break
+    return outputs, inputs, label, form
+
+
+def _node_state(found: tuple[dict, dict, dict] | None, description: str) -> NodeState | None:
+    if found is None:
+        return None
+    obj, info, props = found
+    volume, muted = _props_volume(info)
+    return NodeState(
+        node_id=int(obj["id"]),
+        serial=int(props.get("object.serial") or 0),
+        name=str(props.get("node.name") or ""),
+        description=description or str(props.get("node.description") or "Output"),
+        volume=volume,
+        muted=muted,
+    )
+
+
 def mix_target_name(sinks: list[str], default: str) -> str:
     """Where channel outputs should land so EasyEffects can EQ the device."""
     if EFFECTS_SINK in sinks:
@@ -161,8 +323,13 @@ def mix_target_name(sinks: list[str], default: str) -> str:
 def snapshot() -> Snapshot:
     raw = _run(["pw-dump"], timeout=4.0)
     default = default_sink_name()
+    source = default_source_name()
     sinks = list(_sink_names_by_index().values())
-    snap = Snapshot(default_sink=default, mix_target=mix_target_name(sinks, default))
+    snap = Snapshot(
+        default_sink=default,
+        volume_sink=resolve_volume_sink(default),
+        mix_target=mix_target_name(sinks, default),
+    )
     if not raw:
         return snap
     try:
@@ -209,18 +376,31 @@ def snapshot() -> Snapshot:
         )
         serial_to_channel[serial] = channel.key
 
-    master = by_name.get(snap.mix_target) or by_name.get(snap.default_sink)
+    records = _plain_records(nodes)
+    # Volumes live on the node info, which the plain record does not carry.
+    # Stamp them before the list is built so a row can show its own level.
+    for record in records:
+        found = by_name.get(record["name"])
+        if found is None:
+            continue
+        volume, muted = _props_volume(found[1])
+        record["volume"] = volume
+        record["muted"] = muted
+    snap.outputs, snap.inputs, snap.output_label, snap.output_form = build_endpoints(
+        records, sink_availability(), snap.default_sink, snap.volume_sink, source,
+    )
+
+    master = _node_state(
+        by_name.get(snap.volume_sink) or by_name.get(snap.default_sink) or by_name.get(snap.mix_target),
+        snap.output_label or "Output",
+    )
     if master is not None:
-        obj, info, props = master
-        volume, muted = _props_volume(info)
-        snap.channels["master"] = NodeState(
-            node_id=int(obj["id"]),
-            serial=int(props.get("object.serial") or 0),
-            name=str(props.get("node.name") or ""),
-            description=str(props.get("node.description") or "Output"),
-            volume=volume,
-            muted=muted,
-        )
+        snap.channels["master"] = master
+    if source and not profiles.is_hidden_input(source):
+        mic_label, _form = profiles.describe(source, records, "source")
+        state = _node_state(by_name.get(source), mic_label)
+        if state is not None:
+            snap.channels["input"] = state
 
     routes = _sink_input_map()
     grouped: dict[str, AppStream] = {}
@@ -258,6 +438,27 @@ def snapshot() -> Snapshot:
     snap.apps = sorted(grouped.values(), key=lambda a: a.name.lower())
     snap.ready = any(key in snap.channels for key in ("game", "chat", "media", "aux"))
     return snap
+
+
+def set_default_output(node_id: int, name: str) -> None:
+    """Make `name` the system default without pulling apps off the channels.
+
+    `omarchy-audio-output-set-default` moves every application stream onto the
+    new sink. That would lift Spotify out of Media for a moment. The default
+    is enough: the poller points the channel outputs at the mix target and
+    puts each app back where it was routed.
+    """
+    if not name:
+        return
+    _run(["wpctl", "set-default", str(node_id)], timeout=3.0)
+    _run(["pactl", "set-default-sink", name], timeout=3.0)
+    _volume_sink_cache["at"] = 0.0
+
+
+def set_default_input(node_id: int, name: str) -> None:
+    if not name:
+        return
+    _run(["omarchy-audio-input-set-default", str(node_id), name], timeout=4.0)
 
 
 def set_volume(node_id: int, volume: float) -> None:

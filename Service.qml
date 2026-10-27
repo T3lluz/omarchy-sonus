@@ -48,6 +48,14 @@ Scope {
   property bool manageGraph: true
   property string noticeText: ""
   property bool noticeError: false
+  property var outputs: []
+  property var inputs: []
+  property string outputForm: "speaker"
+  property string outputLabel: ""
+  property string activeProfile: ""
+  property int profileEpoch: 0
+  // The next config line belongs to a device switch, so the open EQ reloads.
+  property bool reloadEq: false
   property var update: ({ state: "unknown", local: "", busy: false, applying: false })
   property double lastUpdateCheck: 0
   // Optimistic assignments, shown until a snapshot confirms them.
@@ -159,7 +167,27 @@ Scope {
       legacy = msg.legacy === true
       effectsRunning = msg.effectsRunning === true
       status = msg.status || ""
+      outputs = msg.outputs || []
+      inputs = msg.inputs || []
+      outputForm = msg.outputForm || "speaker"
+      outputLabel = msg.outputLabel || ""
+      if (msg.activeProfile) activeProfile = msg.activeProfile
+      if (msg.profileEpoch) profileEpoch = msg.profileEpoch
       engineUp = true
+    } else if (msg.type === "profile") {
+      activeProfile = msg.key || activeProfile
+      profileEpoch = msg.epoch || profileEpoch
+      reloadEq = true
+      var applied = {}
+      applied["vol:master"] = { value: msg.masterVolume, at: Date.now() }
+      applied["mute:master"] = { value: !!msg.masterMuted, at: Date.now() }
+      var mixes = msg.channels || {}
+      for (var name in mixes) {
+        applied["vol:" + name] = { value: mixes[name].volume, at: Date.now() }
+        applied["mute:" + name] = { value: !!mixes[name].muted, at: Date.now() }
+      }
+      overrides = applied
+      overrideTimer.restart()
     } else if (msg.type === "config") {
       routes = msg.routes || {}
       var next = {}
@@ -272,6 +300,10 @@ Scope {
 
   function takeOver() { send({ cmd: "takeover" }) }
 
+  function selectOutput(id, name) { send({ cmd: "selectOutput", id: id, name: name }) }
+
+  function selectInput(id, name) { send({ cmd: "selectInput", id: id, name: name }) }
+
   // Hourly at most unless asked, as the desktop app did.
   function checkUpdate(force) {
     if (update.busy) return
@@ -380,6 +412,8 @@ Scope {
         status: root.status,
         legacy: root.legacy,
         master: root.master ? Math.round(root.masterVolume * 100) : null,
+        output: root.outputLabel,
+        profile: root.activeProfile,
         apps: root.appsModel.count,
         mixTarget: root.mixTarget
       })

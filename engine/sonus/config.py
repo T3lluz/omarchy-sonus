@@ -62,6 +62,8 @@ DEFAULTS: dict = {
     "manage_graph": True,
     "routes": {},
     "eq": {},
+    "profiles": {},
+    "active_profile": "",
 }
 
 
@@ -76,6 +78,10 @@ def load_settings() -> dict:
         pass
     if not isinstance(data.get("routes"), dict):
         data["routes"] = {}
+    if not isinstance(data.get("profiles"), dict):
+        data["profiles"] = {}
+    if not isinstance(data.get("active_profile"), str):
+        data["active_profile"] = ""
     return data
 
 

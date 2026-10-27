@@ -239,12 +239,13 @@ Column {
         }
         var col = width / Eq.BAND_COUNT
         var pts = []
-        var steps = 90
+        var steps = 80
+        // A smooth line through the faders. The real bells dip and peak
+        // between bands; this stays on the points instead.
+        var series = view.eqEnabled ? Eq.curveSeries(shown, steps) : null
         for (var k = 0; k <= steps; k++) {
-          // Bands sit an octave apart in equal columns: x is log2 frequency
-          // with band i centred in column i.
           var octave = -0.5 + Eq.BAND_COUNT * k / steps
-          var db = view.eqEnabled ? Eq.responseDb(32 * Math.pow(2, octave), shown, view.preamp) : 0
+          var db = series ? series[k] : 0
           pts.push([col * (octave + 0.5), yFor(db)])
         }
         var tone = view.eqEnabled ? Commons.Color.accent : fg
@@ -262,6 +263,7 @@ Column {
         }
         ctx.lineWidth = Math.max(1.5, Style.space(2))
         ctx.lineJoin = "round"
+        ctx.lineCap = "round"
         ctx.strokeStyle = Qt.rgba(tone.r, tone.g, tone.b, view.eqEnabled ? 0.9 : 0.3)
         ctx.stroke()
       }

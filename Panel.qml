@@ -1,16 +1,18 @@
 import QtQuick
 import Quickshell
+import Quickshell.Services.Pipewire
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "ui"
+import "ui/Audio.js" as Audio
 import "ui/Glyphs.js" as Glyphs
 import "ui/Eq.js" as Eq
 
-// Sonus in the bar: a mixer glyph that drops the panel down like every other
-// Omarchy panel. Master, the four channels (each with its EQ) and every app
-// playing sound, which can be dragged onto a channel or sent there from its
-// button. All state lives in the service; this only draws it.
+// Sonus in the bar. The mark drops the panel: system output and input, the
+// four channels (each with its EQ) and every app playing sound. Picking an
+// output also brings back that device's volume and equalizer. All state
+// lives in the service; this only draws it.
 Panel {
   id: root
   moduleName: "io.github.t3lluz.sonus"
@@ -41,7 +43,11 @@ Panel {
 
   function channelTitle(key) {
     for (var i = 0; i < categories.length; i++) if (categories[i].key === key) return categories[i].title
-    return key === "master" ? "Master" : "Output"
+    return "Output"
+  }
+
+  function levelText(level) {
+    return level.muted ? "muted" : Math.round(level.shownVolume * 100) + "%"
   }
 
   // ---- views ------------------------------------------------------------------
@@ -77,20 +83,64 @@ Panel {
   Connections {
     target: root.service
     function onRequestedViewChanged() { if (root.opened) root.takeRequestedView() }
+    function onEqsChanged() {
+      if (!root.service || !root.service.reloadEq) return
+      root.service.reloadEq = false
+      if (root.view === "eq" && eqView.key)
+        eqView.load(eqView.key, root.channelTitle(eqView.key), root.service.eqs[eqView.key], false)
+    }
+  }
+
+  readonly property bool hasInput: !!(service && service.channels && service.channels.input)
+
+  // ---- device lists -------------------------------------------------------------
+
+  // Collapsed, a device list shows only the device in use, so the channels
+  // and apps stay in view. Clicking that row opens the rest.
+  property bool outputsOpen: false
+  property bool inputsOpen: false
+
+  function devices(section) {
+    if (!service) return []
+    return (section === "sink" ? service.outputs : service.inputs) || []
+  }
+
+  function devicesOpen(section) { return section === "sink" ? outputsOpen : inputsOpen }
+
+  function setDevicesOpen(section, open) {
+    if (section === "sink") outputsOpen = open
+    else inputsOpen = open
+  }
+
+  function deviceShown(section, device) {
+    if (!device || device.active || devicesOpen(section)) return true
+    var list = devices(section)
+    for (var i = 0; i < list.length; i++) if (list[i] && list[i].active) return false
+    return true
   }
 
   // ---- cursor -----------------------------------------------------------------
 
-  // One cursor for keyboard and mouse: "ch:<key>" or "app:<key>".
+  // One cursor for keyboard and mouse: "vol:out", "vol:in", "sink:<name>",
+  // "src:<name>", "ch:<key>" or "app:<key>".
   property bool cursorActive: false
   property string cursorKey: ""
   property string menuKey: ""
 
   readonly property var cursorKeys: {
-    var keys = ["ch:master"]
-    for (var i = 0; i < categories.length; i++) keys.push("ch:" + categories[i].key)
+    var keys = ["vol:out"]
     if (service) {
+      var outs = service.outputs || []
+      for (var i = 0; i < outs.length; i++) if (outs[i] && outs[i].name && deviceShown("sink", outs[i])) keys.push("sink:" + outs[i].name)
+      if (service.channels && service.channels.input) {
+        keys.push("vol:in")
+        var ins = service.inputs || []
+        for (var n = 0; n < ins.length; n++) if (ins[n] && ins[n].name && deviceShown("src", ins[n])) keys.push("src:" + ins[n].name)
+      }
       service.appsVersion
+    }
+    for (var c = 0; c < categories.length; c++) keys.push("ch:" + categories[c].key)
+    if (service) {
       for (var j = 0; j < service.appsModel.count; j++) keys.push("app:" + service.appsModel.get(j).key)
     }
     return keys
@@ -116,6 +166,53 @@ Panel {
   function cursorTarget() {
     var parts = cursorKey.split(":")
     return parts.length > 1 ? parts.slice(1).join(":") : ""
+  }
+
+  // h/l changes a fader. A device row is a choice, so the arrows leave it alone.
+  function volumeKey() {
+    if (cursorKey === "vol:out") return "master"
+    if (cursorKey === "vol:in") return "input"
+    if (cursorKey.indexOf("ch:") === 0 || cursorKey.indexOf("app:") === 0) return cursorTarget()
+    return ""
+  }
+
+  function muteKey() {
+    if (cursorKey === "vol:out" || cursorKey.indexOf("sink:") === 0) return "master"
+    if (cursorKey === "vol:in" || cursorKey.indexOf("src:") === 0) return "input"
+    if (cursorKey.indexOf("ch:") === 0 || cursorKey.indexOf("app:") === 0) return cursorTarget()
+    return ""
+  }
+
+  function selectNamed(section, name) {
+    if (!service || !name) return
+    var list = section === "sink" ? (service.outputs || []) : (service.inputs || [])
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].name === name) {
+        selectDevice(section, list[i])
+        return
+      }
+    }
+  }
+
+  // The device in use opens and closes its list; any other is picked.
+  function selectDevice(section, device) {
+    if (!service || !device || !device.name) return
+    setCursor(section + ":" + device.name)
+    if (device.active) {
+      if (devices(section).length > 1) setDevicesOpen(section, !devicesOpen(section))
+      return
+    }
+    if (section === "sink") service.selectOutput(device.id, device.name)
+    else service.selectInput(device.id, device.name)
+    setDevicesOpen(section, false)
+  }
+
+  function showVolumeOsd(volume) {
+    if (!bar || !bar.shell || typeof bar.shell.summon !== "function") return
+    bar.shell.summon("omarchy.osd", JSON.stringify({
+      icon: Glyphs.outputIcon(service ? service.outputForm : "", false, volume),
+      value: Math.round(volume * 100)
+    }))
   }
 
   function ensureVisible(item) {
@@ -159,13 +256,14 @@ Panel {
   property real dragY: 0
 
   function targetAt(p) {
-    var rows = [masterRow]
-    for (var i = 0; i < channelRepeater.count; i++) rows.push(channelRepeater.itemAt(i))
+    var rows = [outputSection, gameRow, chatRow, mediaRow, auxRow]
     for (var j = 0; j < rows.length; j++) {
       var r = rows[j]
       if (!r) continue
       var q = r.mapToItem(stage, 0, 0)
-      if (p.x >= q.x && p.x <= q.x + r.width && p.y >= q.y && p.y <= q.y + r.height) return r.key
+      var w = r.width > 0 ? r.width : r.implicitWidth
+      var h = r.height > 0 ? r.height : r.implicitHeight
+      if (p.x >= q.x && p.x <= q.x + w && p.y >= q.y && p.y <= q.y + h) return r.key
     }
     return ""
   }
@@ -207,6 +305,8 @@ Panel {
     if (opened) {
       view = "mixer"
       menuKey = ""
+      outputsOpen = false
+      inputsOpen = false
       cursorActive = false
       cursorKey = ""
       endDrag()
@@ -222,6 +322,16 @@ Panel {
 
   // ---- bar button -------------------------------------------------------------
 
+  PwObjectTracker {
+    objects: Pipewire.defaultAudioSource ? [Pipewire.defaultAudioSource] : []
+  }
+
+  PwNodePeakMonitor {
+    id: inputPeakMonitor
+    node: Pipewire.defaultAudioSource
+    enabled: root.opened && root.view === "mixer" && !!Pipewire.defaultAudioSource
+  }
+
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -229,7 +339,13 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.service && root.service.masterMuted ? Glyphs.volumeOff : Glyphs.sliders
+    iconComponent: Component {
+      SonusMark {
+        anchors.fill: parent
+        color: button.active && button.useActiveColor ? button.activeColor : button.foreground
+        muted: !!(root.service && root.service.masterMuted)
+      }
+    }
     tooltipText: {
       var s = root.service
       if (!s || !s.engineUp) return "Sonus"
@@ -247,7 +363,11 @@ Panel {
         }
       } else root.toggle()
     }
-    onWheelMoved: function(delta) { if (root.service) root.wheelVolume("master", delta) }
+    onWheelMoved: function(delta) {
+      if (!root.service) return
+      root.wheelVolume("master", delta)
+      root.showVolumeOsd(root.service.volumeOf("master"))
+    }
   }
 
   // ---- panel --------------------------------------------------------------------
@@ -273,18 +393,21 @@ Panel {
         if (root.view === "eq") { eqView.handleMove(dx, dy); return }
         if (root.view !== "mixer") return
         if (!root.cursorActive) {
-          root.setCursor(root.cursorKey !== "" ? root.cursorKey : "ch:master")
+          root.setCursor(root.cursorKey !== "" ? root.cursorKey : "vol:out")
           return
         }
         if (dy !== 0) root.moveCursor(dy)
-        else if (dx !== 0 && root.service) root.service.adjustVolume(root.cursorTarget(), dx * 0.05)
+        else if (dx !== 0 && root.service && root.volumeKey()) root.service.adjustVolume(root.volumeKey(), dx * 0.05)
       }
       onActivateRequested: {
-        if (root.view !== "mixer" || !root.cursorActive) return
-        var target = root.cursorTarget()
-        if (root.cursorKey.indexOf("app:") === 0) root.toggleMenu(target)
-        else if (target !== "master") root.openEq(target)
-        else root.service.setMute("master", !root.service.mutedOf("master"))
+        if (root.view !== "mixer" || !root.cursorActive || !root.service) return
+        var key = root.cursorKey
+        if (key.indexOf("sink:") === 0) root.selectNamed("sink", root.cursorTarget())
+        else if (key.indexOf("src:") === 0) root.selectNamed("src", root.cursorTarget())
+        else if (key === "vol:out") root.service.setMute("master", !root.service.mutedOf("master"))
+        else if (key === "vol:in") root.service.setMute("input", !root.service.mutedOf("input"))
+        else if (key.indexOf("app:") === 0) root.toggleMenu(root.cursorTarget())
+        else if (key.indexOf("ch:") === 0) root.openEq(root.cursorTarget())
       }
       onCloseRequested: {
         if (root.menuKey !== "") root.menuKey = ""
@@ -302,7 +425,7 @@ Panel {
         var target = root.cursorActive ? root.cursorTarget() : ""
         if (key === "s" || key === ",") root.setView(root.view === "settings" ? "mixer" : "settings")
         else if (root.view !== "mixer") return
-        else if (key === "m" && target !== "" && root.service) root.service.setMute(target, !root.service.mutedOf(target))
+        else if (key === "m" && root.service && root.muteKey()) root.service.setMute(root.muteKey(), !root.service.mutedOf(root.muteKey()))
         else if (key === "e" && root.cursorKey.indexOf("ch:") === 0) root.openEq(target)
         else if (root.cursorKey.indexOf("app:") === 0 && "01234".indexOf(key) >= 0) {
           root.assign(target, key === "0" ? "" : root.categories[Number(key) - 1].key)
@@ -327,47 +450,79 @@ Panel {
           Column {
             id: mixerColumn
             width: flick.width
-            spacing: Style.space(12)
+            spacing: Style.space(14)
 
-            PanelHero {
+            Item {
               width: parent.width
-              title: "Sonus"
-              meta: {
-                var s = root.service
-                if (!s || !s.engineUp) return "STARTING"
-                var parts = []
-                if (s.master) parts.push(s.master.description)
-                if (s.status) parts.push(s.status)
-                return parts.join("  ·  ").toUpperCase()
+              implicitHeight: Math.max(heroMark.height, heroText.implicitHeight, settingsButton.implicitHeight)
+
+              SonusMark {
+                id: heroMark
+                width: Style.font.display
+                height: width
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                color: root.fg
+                muted: !!(root.service && root.service.masterMuted)
               }
-              foreground: root.fg
-              fontFamily: root.fontFamily
-              iconComponent: Component {
+
+              Column {
+                id: heroText
+                anchors.left: heroMark.right
+                anchors.leftMargin: Style.space(14)
+                anchors.right: settingsButton.left
+                anchors.rightMargin: Style.space(12)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(2)
+
                 Text {
+                  width: parent.width
                   textFormat: Text.PlainText
-                  text: Glyphs.sliders
+                  text: "Sonus"
                   color: root.fg
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.display
+                  font.pixelSize: Style.font.title
+                  font.bold: true
+                  elide: Text.ElideRight
+                }
+
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  text: {
+                    var s = root.service
+                    if (!s || !s.engineUp) return "STARTING"
+                    var name = s.outputLabel || (s.master ? s.master.description : "Output")
+                    return (name + "  ·  " + Audio.volumeName(outputLevel.shownVolume, s.masterMuted)).toUpperCase()
+                  }
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  font.letterSpacing: 1.2
+                  elide: Text.ElideRight
                 }
               }
-              trailingControl: Component {
-                PanelActionButton {
-                  iconText: Glyphs.cog
-                  tooltipText: "Settings (s)"
-                  foreground: root.fg
-                  fontFamily: root.fontFamily
-                  onClicked: root.setView("settings")
 
-                  Rectangle {
-                    visible: !!root.service && root.service.update.state === "outdated" && !root.service.update.busy
-                    width: Style.space(7)
-                    height: width
-                    radius: width / 2
-                    color: Commons.Color.accent
-                    anchors.top: parent.top
-                    anchors.right: parent.right
-                  }
+              PanelActionButton {
+                id: settingsButton
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                iconText: Glyphs.cog
+                tooltipText: "Settings (s)"
+                foreground: root.fg
+                fontFamily: root.fontFamily
+                onClicked: root.setView("settings")
+
+                // An update is waiting.
+                Rectangle {
+                  visible: !!root.service && root.service.update.state === "outdated" && !root.service.update.busy
+                  width: Style.space(7)
+                  height: width
+                  radius: width / 2
+                  color: Commons.Color.accent
+                  anchors.top: parent.top
+                  anchors.right: parent.right
                 }
               }
             }
@@ -376,9 +531,8 @@ Panel {
             CursorSurface {
               visible: !!root.service && root.service.legacy
               width: parent.width
-              implicitHeight: legacyRow.implicitHeight + Style.spacing.lg
+              implicitHeight: legacyRow.implicitHeight + Style.spacing.xl
               current: true
-              outline: true
               foreground: root.fg
               currentFill: Style.selectedFillFor(Commons.Color.urgent, Commons.Color.urgent)
 
@@ -387,7 +541,8 @@ Panel {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.margins: Style.space(8)
+                anchors.leftMargin: Style.space(8)
+                anchors.rightMargin: Style.space(8)
                 implicitHeight: Math.max(legacyText.implicitHeight, switchButton.implicitHeight)
 
                 Text {
@@ -419,89 +574,105 @@ Panel {
               }
             }
 
-            PanelSeparator { foreground: root.fg }
-
-            Column {
+            // Also the drop target that takes an app back to the plain output.
+            Section {
+              id: outputSection
               width: parent.width
-              spacing: Style.space(4)
+              key: "master"
+              title: "OUTPUT"
+              meta: root.levelText(outputLevel)
+              hot: root.dragKey !== "" && root.dropTarget === "master"
+              foreground: root.fg
+              fontFamily: root.fontFamily
 
-              PanelSectionHeader {
-                text: "OUTPUT"
-                foreground: root.fg
-                fontFamily: root.fontFamily
-              }
-
-              ChannelRow {
-                id: masterRow
+              LevelRow {
+                id: outputLevel
                 host: root
                 key: "master"
-                title: "Master"
-                width: parent.width
-              }
-            }
-
-            PanelSeparator { foreground: root.fg }
-
-            Column {
-              width: parent.width
-              spacing: Style.space(4)
-
-              PanelSectionHeader {
-                text: "CHANNELS"
-                foreground: root.fg
-                fontFamily: root.fontFamily
+                cursor: "vol:out"
+                glyph: Glyphs.outputIcon(root.service ? root.service.outputForm : "", muted, shownVolume)
               }
 
               Repeater {
-                id: channelRepeater
-                model: root.categories
-
-                ChannelRow {
-                  required property var modelData
-                  host: root
-                  key: modelData.key
-                  title: modelData.title
+                model: root.service ? root.service.outputs : []
+                DeviceRow {
                   width: parent.width
-                }
-              }
-            }
-
-            PanelSeparator { foreground: root.fg }
-
-            Column {
-              width: parent.width
-              spacing: Style.space(4)
-
-              Item {
-                width: parent.width
-                implicitHeight: appsHeader.implicitHeight
-
-                PanelSectionHeader {
-                  id: appsHeader
-                  text: "APPS"
-                  foreground: root.fg
-                  fontFamily: root.fontFamily
-                }
-
-                Text {
-                  anchors.right: parent.right
-                  anchors.rightMargin: Style.space(6)
-                  anchors.verticalCenter: parent.verticalCenter
-                  visible: !!root.service && root.service.appsModel.count > 0
-                  text: "drag onto a channel to assign"
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
+                  host: root
+                  section: "sink"
                 }
               }
 
               Text {
-                visible: !root.service || root.service.appsModel.count === 0
-                width: parent.width
+                visible: !root.service || !root.service.outputs || root.service.outputs.length === 0
                 leftPadding: Style.space(6)
-                topPadding: Style.space(4)
-                bottomPadding: Style.space(4)
-                text: "No app audio. Apps that play sound appear here."
+                text: "No output devices"
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+
+            Section {
+              width: parent.width
+              visible: root.hasInput || (!!root.service && !!root.service.inputs && root.service.inputs.length > 0)
+              title: "INPUT"
+              meta: root.hasInput ? root.levelText(inputLevel) : ""
+              foreground: root.fg
+              fontFamily: root.fontFamily
+
+              LevelRow {
+                id: inputLevel
+                visible: root.hasInput
+                host: root
+                key: "input"
+                cursor: "vol:in"
+                glyph: muted ? Glyphs.microphoneOff : Glyphs.microphone
+                metered: true
+                peak: inputPeakMonitor.peak
+              }
+
+              Repeater {
+                model: root.service ? root.service.inputs : []
+                DeviceRow {
+                  width: parent.width
+                  host: root
+                  section: "src"
+                }
+              }
+            }
+
+            Section {
+              width: parent.width
+              title: "CHANNELS"
+              foreground: root.fg
+              fontFamily: root.fontFamily
+
+              Grid {
+                id: channelGrid
+                width: parent.width
+                columns: 2
+                spacing: Style.space(8)
+
+                readonly property real cell: (width - spacing) / 2
+
+                ChannelRow { id: gameRow; host: root; key: "game"; title: "Game"; width: channelGrid.cell }
+                ChannelRow { id: chatRow; host: root; key: "chat"; title: "Chat"; width: channelGrid.cell }
+                ChannelRow { id: mediaRow; host: root; key: "media"; title: "Media"; width: channelGrid.cell }
+                ChannelRow { id: auxRow; host: root; key: "aux"; title: "Aux"; width: channelGrid.cell }
+              }
+            }
+
+            Section {
+              width: parent.width
+              title: "APPS"
+              meta: root.service && root.service.appsModel.count > 0 ? "drag onto a channel" : ""
+              foreground: root.fg
+              fontFamily: root.fontFamily
+
+              Text {
+                visible: !root.service || root.service.appsModel.count === 0
+                leftPadding: Style.space(6)
+                text: "Apps show up here while they play."
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption

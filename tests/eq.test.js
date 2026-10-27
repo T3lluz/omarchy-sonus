@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "ui", "Eq.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Eq = new Function(source + "\nreturn { BAND_FREQS, BAND_COUNT, BAND_Q, GAIN_LIMIT, PRESETS, clamp, flat, normalized, isFlat, presetPreamp, snap, gainText, dbText, responseDb }")()
+const Eq = new Function(source + "\nreturn { BAND_FREQS, BAND_COUNT, BAND_Q, GAIN_LIMIT, PRESETS, clamp, flat, normalized, isFlat, presetPreamp, snap, gainText, dbText, responseDb, curveAt }")()
 
 // The panel's copy of the band layout must match the engine's (eq.py).
 const engine = fs.readFileSync(path.join(__dirname, "..", "engine", "sonus", "eq.py"), "utf8")
@@ -49,5 +49,20 @@ const boosted = flatGains.slice(); boosted[5] = 6
 assert.ok(Math.abs(Eq.responseDb(1000, boosted, 0) - 6) < 0.3)
 assert.ok(Eq.responseDb(8000, boosted, 0) < 1)
 assert.ok(Math.abs(Eq.responseDb(1000, flatGains, -3) + 3) < 1e-9)
+
+// The drawn line passes through each fader and does not rollercoaster between them.
+const ramp = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+assert.strictEqual(Eq.curveAt(0, ramp), 0)
+assert.strictEqual(Eq.curveAt(9, ramp), 9)
+assert.ok(Math.abs(Eq.curveAt(2.5, ramp) - 2.5) < 1e-6)
+assert.strictEqual(Eq.curveAt(-2, ramp), 0)
+assert.strictEqual(Eq.curveAt(12, ramp), 9)
+for (let x = 0; x <= 9; x += 0.25) assert.ok(Math.abs(Eq.curveAt(x, flatGains.map(() => 4)) - 4) < 1e-6)
+const peak = [0, 0, 0, 6, 0, 0, 0, 0, 0, 0]
+for (let x = 0; x <= 9; x += 0.1) {
+  const y = Eq.curveAt(x, peak)
+  assert.ok(y >= -1e-6 && y <= 6 + 1e-6, `${y} at ${x}`)
+}
+assert.ok(Math.abs(Eq.curveAt(3, peak) - 6) < 1e-6)
 
 console.log("eq tests passed")

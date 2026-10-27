@@ -4,9 +4,8 @@ import qs.Commons as Commons
 import qs.Ui
 import "Glyphs.js" as Glyphs
 
-// One channel: Master or a category. The category rows double as drop
-// targets: an app dragged onto one is assigned to it, and Master takes an
-// app back to the plain output.
+// One channel tile: Game, Chat, Media or Aux. Doubles as a drop target: an
+// app dragged onto it is assigned to the channel.
 CursorSurface {
   id: row
 
@@ -15,26 +14,26 @@ CursorSurface {
   required property string title
 
   readonly property var service: host.service
-  readonly property bool isMaster: key === "master"
   readonly property bool present: !!(service && service.channels && service.channels[key])
   readonly property real volume: service ? service.volumeOf(key) : 0
   readonly property bool muted: service ? service.mutedOf(key) : false
   readonly property bool dropHot: host.dragKey !== "" && host.dropTarget === key
   readonly property var apps: {
-    if (!service || isMaster) return []
+    if (!service) return []
     service.appsVersion
     service.pendingRoutes
     return service.appsIn(key)
   }
-  readonly property bool eqActive: !isMaster && host.eqActive(key)
+  readonly property bool eqActive: host.eqActive(key)
 
   hasCursor: host.cursorActive && host.cursorKey === "ch:" + key
   current: dropHot
-  outline: dropHot
+  bordered: true
   foreground: host.fg
   fill: host.hoverFill
   currentFill: host.selectedFill
-  implicitHeight: column.implicitHeight + Style.spacing.lg
+  implicitHeight: column.implicitHeight + Style.spacing.xl
+  height: implicitHeight
   onHasCursorChanged: if (hasCursor) host.ensureVisible(row)
 
   HoverHandler {
@@ -75,9 +74,10 @@ CursorSurface {
       }
 
       Text {
-        id: name
         anchors.left: glyph.right
-        anchors.leftMargin: Style.space(8)
+        anchors.leftMargin: Style.space(6)
+        anchors.right: icons.left
+        anchors.rightMargin: Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: row.title
@@ -85,21 +85,21 @@ CursorSurface {
         opacity: row.present ? 1 : 0.5
         font.family: row.host.fontFamily
         font.pixelSize: Style.font.body
-        font.bold: row.isMaster || row.dropHot
+        font.bold: row.dropHot
+        elide: Text.ElideRight
       }
 
-      // Who is playing into this channel.
+      // Who is playing into this channel, at most three faces. Anchored from
+      // the right so the name elides first in a narrow tile.
       Row {
-        anchors.left: name.right
-        anchors.leftMargin: Style.space(10)
+        id: icons
         anchors.right: pct.left
-        anchors.rightMargin: Style.space(8)
+        anchors.rightMargin: Style.space(6)
         anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.space(4)
-        clip: true
+        spacing: -Style.space(3)
 
         Repeater {
-          model: row.apps
+          model: row.apps.slice(0, 3)
 
           Item {
             required property var modelData
@@ -128,21 +128,12 @@ CursorSurface {
             }
           }
         }
-
-        Text {
-          visible: row.dropHot
-          anchors.verticalCenter: parent.verticalCenter
-          text: row.isMaster ? "release to unassign" : "release to assign"
-          color: row.host.dim
-          font.family: row.host.fontFamily
-          font.pixelSize: Style.font.caption
-        }
       }
 
       Text {
         id: pct
-        anchors.right: eqButton.visible ? eqButton.left : parent.right
-        anchors.rightMargin: eqButton.visible ? Style.space(4) : 0
+        anchors.right: eqButton.left
+        anchors.rightMargin: Style.space(2)
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: row.muted ? "muted" : Math.round((slider.dragging ? slider.liveValue : row.volume) * 100) + "%"
@@ -154,7 +145,6 @@ CursorSurface {
 
       PanelActionButton {
         id: eqButton
-        visible: !row.isMaster
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         iconText: Glyphs.sliders

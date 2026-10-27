@@ -23,7 +23,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import effects, legacy, pipewire, updater
+from . import effects, legacy, pipewire, profiles, updater
 from . import eq as eqmod
 from .config import CHANNELS, SINK_CHANNELS, SINK_KEYS, load_settings, save_settings
 from .graph import GraphProcess
@@ -70,6 +70,14 @@ class Engine:
         self.plugin_id = plugin_id
         self.settings = load_settings()
         self.eqs = eqmod.load_all(self.settings, SINK_KEYS)
+        self.profiles = profiles.load(self.settings)
+        active = self.settings.get("active_profile") or ""
+        self.active_key = active if isinstance(active, str) else ""
+        self._profiles_started = False
+        self._apply_pending = False
+        self._hold_until = 0.0
+        self._skip_apply_once = False
+        self.profile_epoch = 0
         self.eq_applied: dict[str, tuple] = {}
         self.graph = GraphProcess()
         self.snap = pipewire.Snapshot()
@@ -123,6 +131,9 @@ class Engine:
                 self._persist_timer.cancel()
                 self._persist_timer = None
             eqmod.store_all(self.settings, self.eqs)
+            if self.active_key:
+                self.settings["active_profile"] = self.active_key
+            profiles.store(self.settings, self.profiles)
             try:
                 save_settings(self.settings)
             except OSError as exc:
@@ -210,6 +221,10 @@ class Engine:
             self.watch_graph(snap)
         with self._state_lock:
             self.snap = snap
+            if was_legacy and not self.legacy:
+                self._adopt_disk_settings(snap)
+            if not self.legacy:
+                self.sync_profile(snap)
             self.ensure_eq_applied(snap)
         payload = snap.to_dict()
         payload.update({
@@ -217,6 +232,8 @@ class Engine:
             "status": self.status_text(snap),
             "legacy": self.legacy,
             "effectsRunning": snap.mix_target == pipewire.EFFECTS_SINK,
+            "activeProfile": self.active_key,
+            "profileEpoch": self.profile_epoch,
         })
         self.emit(payload)
 
@@ -244,6 +261,8 @@ class Engine:
         elif cmd == "volume":
             ids = [int(i) for i in msg.get("ids") or []]
             value = float(msg.get("value", 0.0))
+            with self._state_lock:
+                self._note_levels(ids, volume=value)
             self._writer.submit(
                 "vol:" + ",".join(map(str, ids)),
                 lambda: [pipewire.set_volume(i, value) for i in ids],
@@ -251,11 +270,17 @@ class Engine:
         elif cmd == "mute":
             ids = [int(i) for i in msg.get("ids") or []]
             value = bool(msg.get("value"))
+            with self._state_lock:
+                self._note_levels(ids, muted=value)
             self._writer.submit(
                 "mute:" + ",".join(map(str, ids)),
                 lambda: [pipewire.set_mute(i, value) for i in ids],
             )
             self._wake.set()
+        elif cmd == "selectOutput":
+            self._select(self._select_output, msg)
+        elif cmd == "selectInput":
+            self._select(self._select_input, msg)
         elif cmd == "route":
             self.route(str(msg.get("key", "")), str(msg.get("channel", "")))
         elif cmd == "eq":
@@ -270,6 +295,220 @@ class Engine:
             self._pool.submit(self.update_check)
         elif cmd == "updateApply":
             self._pool.submit(self.update_apply)
+
+    def _note_levels(self, ids: list[int], volume: float | None = None, muted: bool | None = None) -> None:
+        """Remember a fader move on the device that is playing. Caller holds the lock."""
+        profile = self.profiles.get(self.active_key)
+        if profile is None:
+            return
+        wanted = set(ids)
+        changed = False
+        master = self.snap.channels.get("master")
+        if master is not None and master.node_id in wanted:
+            if volume is not None:
+                profile.volume = max(0.0, min(1.0, volume))
+            if muted is not None:
+                profile.muted = muted
+            changed = True
+        for key in SINK_KEYS:
+            node = self.snap.channels.get(key)
+            if node is None or node.node_id not in wanted:
+                continue
+            mix = profile.channels.setdefault(key, profiles.Mix())
+            if volume is not None:
+                mix.volume = max(0.0, min(1.0, volume))
+            if muted is not None:
+                mix.muted = muted
+            changed = True
+        if changed:
+            self.persist_later()
+
+    def _push_volume(self, node_id: int, volume: float) -> None:
+        self._writer.submit(f"vol:{node_id}", lambda n=node_id, v=volume: pipewire.set_volume(n, v))
+
+    def _push_mute(self, node_id: int, muted: bool) -> None:
+        self._writer.submit(f"mute:{node_id}", lambda n=node_id, m=muted: pipewire.set_mute(n, m))
+
+    def _push_profile(self, profile: profiles.Profile, snap: pipewire.Snapshot) -> bool:
+        """Write a profile onto the live nodes. False while a channel is still missing."""
+        missing = False
+        for key in SINK_KEYS:
+            state = self.eqs.get(key) or eqmod.ChannelEq()
+            node = snap.channels.get(key)
+            if node is None:
+                if self.manage():
+                    missing = True
+                continue
+            self.eq_applied[key] = (node.node_id, state.signature())
+            self._writer.submit(
+                f"eq:{key}",
+                lambda n=node.node_id, s=state: pipewire.set_channel_eq(n, s),
+            )
+            mix = profile.channels.get(key) or profiles.Mix()
+            self._push_volume(node.node_id, mix.volume)
+            self._push_mute(node.node_id, mix.muted)
+        master = snap.channels.get("master")
+        if master is not None:
+            self._push_volume(master.node_id, profile.volume)
+            self._push_mute(master.node_id, profile.muted)
+        else:
+            missing = True
+        return not missing
+
+    def _apply_profile(self, profile: profiles.Profile, snap: pipewire.Snapshot) -> None:
+        profile = profile.normalized()
+        self.eqs = profiles.clone_eqs(profile.eqs)
+        profile.eqs = self.eqs
+        self.profiles[self.active_key] = profile
+        self._hold_until = time.monotonic() + 2.0
+        self.profile_epoch += 1
+        self._apply_pending = not self._push_profile(profile, snap)
+        self.settings["active_profile"] = self.active_key
+        self.emit({
+            "type": "profile",
+            "epoch": self.profile_epoch,
+            "key": self.active_key,
+            "masterVolume": profile.volume,
+            "masterMuted": profile.muted,
+            "channels": {key: profile.channels[key].to_dict() for key in SINK_KEYS},
+        })
+        self.emit_config()
+        self.persist_later()
+
+    def _switch_profile(self, snap: pipewire.Snapshot, key: str, label: str) -> None:
+        master = snap.channels.get("master")
+        fallback = profiles.from_live(
+            label,
+            master.volume if master is not None else 1.0,
+            master.muted if master is not None else False,
+            snap.channels,
+            self.eqs,
+        )
+        chosen, apply = profiles.adopt(self.profiles, key, fallback)
+        self.active_key = key
+        self.settings["active_profile"] = key
+        if apply:
+            self._apply_profile(chosen, snap)
+            return
+        chosen.eqs = profiles.clone_eqs(self.eqs)
+        self.profiles[key] = chosen
+        self.persist_later()
+
+    def _capture_profile(self, snap: pipewire.Snapshot) -> None:
+        profile = self.profiles.get(self.active_key)
+        master = snap.channels.get("master")
+        if profile is None or master is None:
+            return
+        changed = False
+        if abs(profile.volume - master.volume) > 0.005 or profile.muted != master.muted:
+            profile.volume = master.volume
+            profile.muted = master.muted
+            changed = True
+        if snap.output_label and profile.label != snap.output_label:
+            profile.label = snap.output_label
+            changed = True
+        for key in SINK_KEYS:
+            node = snap.channels.get(key)
+            if node is None:
+                continue
+            mix = profile.channels.setdefault(key, profiles.Mix())
+            if abs(mix.volume - node.volume) > 0.005 or mix.muted != node.muted:
+                mix.volume = node.volume
+                mix.muted = node.muted
+                changed = True
+        if changed:
+            self.persist_later()
+
+    def sync_profile(self, snap: pipewire.Snapshot) -> None:
+        """Load a device's saved mix when the output changes, including at startup."""
+        if self.legacy or not snap.volume_sink or "master" not in snap.channels:
+            return
+        key = profiles.profile_key(snap.volume_sink)
+        label = snap.output_label or snap.volume_sink
+        if self._apply_pending and key == self.active_key and key in self.profiles:
+            self._hold_until = time.monotonic() + 2.0
+            if self._push_profile(self.profiles[key], snap):
+                self._apply_pending = False
+            return
+        if key != self.active_key:
+            self._profiles_started = True
+            if self._skip_apply_once:
+                self._skip_apply_once = False
+                self._remember_without_apply(snap, key, label)
+            else:
+                self._switch_profile(snap, key, label)
+            return
+        if not self._profiles_started:
+            self._profiles_started = True
+            if self._skip_apply_once or key not in self.profiles:
+                self._skip_apply_once = False
+                self._remember_without_apply(snap, key, label)
+            else:
+                self._apply_profile(self.profiles[key], snap)
+            return
+        if time.monotonic() < self._hold_until:
+            return
+        self._capture_profile(snap)
+
+    def _adopt_disk_settings(self, _snap: pipewire.Snapshot) -> None:
+        """The desktop app just quit. Take the curves it wrote, and don't stomp them."""
+        self.settings = load_settings()
+        self.eqs = eqmod.load_all(self.settings, SINK_KEYS)
+        self.profiles = profiles.load(self.settings)
+        self.eq_applied.clear()
+        # sync_profile folds these curves into the current device without
+        # pushing the previous profile back over them. The snapshot is what
+        # that next step reads.
+        self._skip_apply_once = True
+        self._profiles_started = False
+        self._apply_pending = False
+        self._hold_until = 0.0
+        saved = self.settings.get("active_profile") or ""
+        self.active_key = saved if isinstance(saved, str) else ""
+
+    def _remember_without_apply(self, snap: pipewire.Snapshot, key: str, label: str) -> None:
+        """Keep the curves already loaded and attach them to this device."""
+        if key not in self.profiles:
+            self._switch_profile(snap, key, label)
+            return
+        profile = self.profiles[key]
+        profile.eqs = profiles.clone_eqs(self.eqs)
+        master = snap.channels.get("master")
+        if master is not None:
+            profile.volume = master.volume
+            profile.muted = master.muted
+        if label:
+            profile.label = label
+        self.active_key = key
+        self.settings["active_profile"] = key
+        self.persist_later()
+
+    def _select(self, fn, msg: dict) -> None:
+        name = str(msg.get("name") or "")
+        if not name:
+            return
+        try:
+            node_id = int(msg.get("id"))
+        except (TypeError, ValueError):
+            return
+        self._pool.submit(fn, node_id, name)
+
+    def _select_output(self, node_id: int, name: str) -> None:
+        pipewire.set_default_output(node_id, name)
+        try:
+            snap = pipewire.snapshot()
+            if not self.legacy:
+                with self._state_lock:
+                    routes = dict(self.routes())
+                pipewire.retarget_channel_outputs(snap)
+                pipewire.enforce_app_routes(snap, routes)
+        except Exception:
+            pass
+        self._wake.set()
+
+    def _select_input(self, node_id: int, name: str) -> None:
+        pipewire.set_default_input(node_id, name)
+        self._wake.set()
 
     def route(self, key: str, channel_key: str) -> None:
         """Assign an app to a category ("" = back to the mix) and move it.
@@ -308,6 +547,9 @@ class Engine:
         state = eqmod.ChannelEq.from_dict(data)
         with self._state_lock:
             self.eqs[key] = state
+            profile = self.profiles.get(self.active_key)
+            if profile is not None:
+                profile.eqs[key] = state
             node = self.snap.channels.get(key)
             if node is not None:
                 self.eq_applied[key] = (node.node_id, state.signature())
