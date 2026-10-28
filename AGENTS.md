@@ -27,6 +27,8 @@ Sonus keeps its own settings file rather than `shell.json`, so the `WidgetSettin
 - **One widget per monitor.** The bar draws the widget on every screen. Long-running work (a poller, a client, a process) lives in one place, a leader instance or the service, and the others read from it. Never start it per instance.
 - **IPC** is answered by whichever monitor's widget registered first, so `open`, `close` and `toggle` go through the shell's `summon`, `hide` and `toggle`, which pick the focused monitor.
 - **Nothing may write inside the plugin folder at runtime.** The shell watches it and reloads every plugin when a file appears there. Python sets `sys.dont_write_bytecode`; state goes to `~/.local/state` or `~/.config`.
+- **Updates run detached.** `omarchy plugin update` writes into the plugin folder, which reloads the plugin and ends the engine. `updater.start` launches the runner as `sonus-update.service` so it outlives that, and the next engine reports its result from `~/.local/state/sonus/update.json`. Never run the update as a child of the engine.
+- **Apps are what apps play.** A filter-chain or loopback plays into the hardware through a stream of its own; `pipewire.is_app_stream` keeps those (anything with `node.link-group` and no binary) out of the app list.
 - **QML changes need `omarchy restart shell`.** Hot reload can keep the old component cached.
 - **Pure logic goes in `Model.js`** (a `.pragma library` with no QML) so `node tests/*.test.js` can run it. Change it with a test.
 - Comments say why, in plain sentences. Match the surrounding code.

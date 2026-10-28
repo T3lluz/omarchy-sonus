@@ -154,6 +154,24 @@ def _app_identity(props: dict) -> tuple[str, str, str, str]:
     return key, label, icon, binary
 
 
+def is_app_stream(props: dict) -> bool:
+    """A playback stream an app opened, as opposed to plumbing.
+
+    A filter-chain, loopback or combine sink plays into the hardware through
+    a stream of its own (a speaker tuning's "Laptop speakers playback"). It
+    carries `node.link-group` and no app; listing it would offer to route
+    the speakers into a channel that plays into the speakers.
+    """
+    if str(props.get("media.class") or "") not in STREAM_CLASSES:
+        return False
+    name = str(props.get("node.name") or "")
+    if name.startswith(f"output.{NODE_PREFIX}_") or name.startswith(NODE_PREFIX):
+        return False
+    if props.get("node.link-group") and not props.get("application.process.binary"):
+        return False
+    return True
+
+
 def _sink_input_map() -> dict[int, int]:
     """Stream pulse index -> sink pulse index (both are PipeWire object serials)."""
     mapping: dict[int, int] = {}
@@ -405,10 +423,7 @@ def snapshot() -> Snapshot:
     routes = _sink_input_map()
     grouped: dict[str, AppStream] = {}
     for obj, info, props in nodes:
-        if str(props.get("media.class") or "") not in STREAM_CLASSES:
-            continue
-        name = str(props.get("node.name") or "")
-        if name.startswith(f"output.{NODE_PREFIX}_") or name.startswith(NODE_PREFIX):
+        if not is_app_stream(props):
             continue
         key, label, icon, binary = _app_identity(props)
         if key in _SKIP_APPS or binary.lower() in _SKIP_APPS:

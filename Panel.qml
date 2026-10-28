@@ -57,6 +57,7 @@ Panel {
   function setView(next) {
     view = next
     menuKey = ""
+    if (next === "settings" && service) service.checkUpdate(10)
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -311,7 +312,7 @@ Panel {
       cursorKey = ""
       endDrag()
       if (flick) flick.contentY = 0
-      if (service) service.checkUpdate(false)
+      if (service) service.checkUpdate(60)
       takeRequestedView()
     } else {
       endDrag()
@@ -339,19 +340,28 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
+    // Sized like the first-party drawn icons (Tailscale, Dropbox): a little
+    // inside the 16 px canvas, so its weight matches the font glyphs beside
+    // it. Even sizes keep the centre on a whole pixel.
     iconComponent: Component {
-      SonusMark {
-        anchors.fill: parent
-        color: button.active && button.useActiveColor ? button.activeColor : button.foreground
-        muted: !!(root.service && root.service.masterMuted)
+      Item {
+        SonusMark {
+          anchors.centerIn: parent
+          width: Math.round(Style.space(12) / 2) * 2
+          height: width
+          color: button.active && button.useActiveColor ? button.activeColor : button.foreground
+          muted: !!(root.service && root.service.masterMuted)
+        }
       }
     }
     tooltipText: {
       var s = root.service
       if (!s || !s.engineUp) return "Sonus"
-      var out = "Sonus · " + (s.master ? s.master.description + " " : "")
-        + (s.masterMuted ? "muted" : Math.round(s.masterVolume * 100) + "%")
-      return s.status ? out + "\n" + s.status : out
+      var lines = [(s.outputLabel || (s.master ? s.master.description : "Output")) + "  "
+        + (s.masterMuted ? "muted" : Math.round(s.masterVolume * 100) + "%")]
+      if (s.status) lines.push(s.status)
+      if (s.updateAvailable) lines.push("Update available")
+      return lines.join("\n")
     }
     onPressed: function(b) {
       if (b === Qt.MiddleButton) { if (root.service) root.service.toggleMasterMute() }
@@ -509,14 +519,14 @@ Panel {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 iconText: Glyphs.cog
-                tooltipText: "Settings (s)"
+                tooltipText: root.service && root.service.updateAvailable ? "Settings (s) · update available" : "Settings (s)"
                 foreground: root.fg
                 fontFamily: root.fontFamily
                 onClicked: root.setView("settings")
 
                 // An update is waiting.
                 Rectangle {
-                  visible: !!root.service && root.service.update.state === "outdated" && !root.service.update.busy
+                  visible: !!root.service && root.service.updateAvailable
                   width: Style.space(7)
                   height: width
                   radius: width / 2
@@ -524,6 +534,58 @@ Panel {
                   anchors.top: parent.top
                   anchors.right: parent.right
                 }
+              }
+            }
+
+            // What the engine has to say: a restored device mix, a failed
+            // write, an update. Click to dismiss; it also goes by itself.
+            CursorSurface {
+              visible: !!root.service && root.service.noticeText !== ""
+              width: parent.width
+              implicitHeight: noticeRow.implicitHeight + Style.spacing.lg
+              current: true
+              foreground: root.fg
+              currentFill: root.service && root.service.noticeError
+                ? Style.selectedFillFor(Commons.Color.urgent, Commons.Color.urgent)
+                : root.selectedFill
+
+              Row {
+                id: noticeRow
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: Style.space(8)
+                anchors.rightMargin: Style.space(8)
+                spacing: Style.space(8)
+
+                Text {
+                  id: noticeGlyph
+                  width: Style.space(22)
+                  horizontalAlignment: Text.AlignHCenter
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  text: root.service && root.service.noticeError ? Glyphs.alert : Glyphs.info
+                  color: root.service && root.service.noticeError ? Commons.Color.urgent : root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                }
+
+                Text {
+                  width: parent.width - noticeGlyph.width - parent.spacing
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  wrapMode: Text.WordWrap
+                  text: root.service ? root.service.noticeText : ""
+                  color: root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.service.dismissNotice()
               }
             }
 

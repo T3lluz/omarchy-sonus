@@ -48,6 +48,7 @@ Scope {
   property bool manageGraph: true
   property string noticeText: ""
   property bool noticeError: false
+  property double noticeAt: 0
   property var outputs: []
   property var inputs: []
   property string outputForm: "speaker"
@@ -56,8 +57,11 @@ Scope {
   property int profileEpoch: 0
   // The next config line belongs to a device switch, so the open EQ reloads.
   property bool reloadEq: false
-  property var update: ({ state: "unknown", local: "", busy: false, applying: false })
-  property double lastUpdateCheck: 0
+  // The engine's last word on updates: state is unknown | unmanaged |
+  // current | outdated | offline | failed; checked is epoch seconds.
+  property var update: ({ state: "unknown", local: "", busy: false, applying: false,
+    version: "", summary: "", behind: 0, modified: false, message: "", checked: 0 })
+  readonly property bool updateAvailable: update.state === "outdated" && !update.busy
   // Optimistic assignments, shown until a snapshot confirms them.
   property var pendingRoutes: ({})
 
@@ -205,14 +209,22 @@ Scope {
     } else if (msg.type === "notice") {
       noticeText = msg.text || ""
       noticeError = msg.error === true
-      noticeTimer.restart()
+      noticeAt = Date.now()
+      noticeTimer.interval = noticeError ? 9000 : 5000
+      // A notice from while the panel was shut waits to be seen.
+      if (opened) noticeTimer.restart()
     }
   }
 
   Timer {
     id: noticeTimer
-    interval: 6000
+    interval: 5000
     onTriggered: root.noticeText = ""
+  }
+
+  function dismissNotice() {
+    noticeTimer.stop()
+    noticeText = ""
   }
 
   // ---- commands ---------------------------------------------------------------
@@ -304,19 +316,24 @@ Scope {
 
   function selectInput(id, name) { send({ cmd: "selectInput", id: id, name: name }) }
 
-  // Hourly at most unless asked, as the desktop app did.
-  function checkUpdate(force) {
-    if (update.busy) return
-    var now = Date.now()
-    if (!force && lastUpdateCheck && now - lastUpdateCheck < 3600 * 1000) return
-    lastUpdateCheck = now
+  // The engine also checks on its own every few hours. This asks again only
+  // when the last answer is older than `minutes`; 0 always asks.
+  function checkUpdate(minutes) {
+    if (update.busy || update.state === "unmanaged") return
+    var checked = Number(update.checked || 0) * 1000
+    if (minutes > 0 && checked > 0 && Date.now() - checked < minutes * 60000) return
     send({ cmd: "updateCheck" })
   }
 
-  function updateClicked() {
-    if (update.busy) return
-    if (update.state === "outdated") send({ cmd: "updateApply" })
-    else checkUpdate(true)
+  function applyUpdate() {
+    if (update.busy || update.state !== "outdated") return
+    var u = {}
+    for (var k in update) u[k] = update[k]
+    u.busy = true
+    u.applying = true
+    u.message = ""
+    update = u
+    send({ cmd: "updateApply" })
   }
 
   function nudgeMaster(steps) {
@@ -346,7 +363,8 @@ Scope {
     stdinEnabled: true
     stdout: SplitParser {
       splitMarker: "\n"
-      onRead: function(line) { root.handleLine(line) }
+      // The engine can still be talking while a reload tears this down.
+      onRead: function(line) { if (root) root.handleLine(line) }
     }
     stderr: SplitParser {
       splitMarker: "\n"
@@ -374,7 +392,13 @@ Scope {
   // Panels report in, so the engine polls fast only while one is showing.
   property int openPanels: 0
   readonly property bool opened: openPanels > 0
-  onOpenedChanged: send({ cmd: "active", value: opened })
+  onOpenedChanged: {
+    send({ cmd: "active", value: opened })
+    if (!opened || noticeText === "") return
+    // Older than a few minutes is no longer news.
+    if (Date.now() - noticeAt > 5 * 60000) dismissNotice()
+    else noticeTimer.restart()
+  }
 
   // A view to open on ("eq:chat", "settings"), set before the shell opens
   // the panel and taken by whichever panel opens.
@@ -404,6 +428,15 @@ Scope {
       root.takeOver()
       return "switching"
     }
+    // Install a waiting update, or look for one.
+    function update(): string {
+      if (root.update.state === "outdated") {
+        root.applyUpdate()
+        return "updating to " + (root.update.version || "the latest commit")
+      }
+      root.checkUpdate(0)
+      return "checking"
+    }
     function status(): string {
       return JSON.stringify({
         engine: root.engineUp,
@@ -415,7 +448,10 @@ Scope {
         output: root.outputLabel,
         profile: root.activeProfile,
         apps: root.appsModel.count,
-        mixTarget: root.mixTarget
+        mixTarget: root.mixTarget,
+        version: root.version,
+        update: root.update.state,
+        updateVersion: root.update.version || null
       })
     }
   }

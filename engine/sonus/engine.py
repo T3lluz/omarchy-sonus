@@ -32,6 +32,8 @@ ACTIVE_INTERVAL = 0.7
 IDLE_INTERVAL = 2.0
 EQ_PERSIST_DELAY = 0.8
 GRAPH_RETRY = 6.0
+UPDATE_FIRST_CHECK = 60.0
+UPDATE_INTERVAL = 6 * 3600.0
 
 
 class Writer(threading.Thread):
@@ -190,7 +192,8 @@ class Engine:
         missing = [c.label.title() for c in CHANNELS if c.kind != "master" and c.key not in snap.channels]
         if missing:
             return "Missing: " + ", ".join(missing)
-        return effects.status_text()
+        # EasyEffects is optional, so whether it runs is not news.
+        return ""
 
     def ensure_eq_applied(self, snap: pipewire.Snapshot) -> None:
         """Re-push saved EQs whenever a channel node (re)appears."""
@@ -294,7 +297,8 @@ class Engine:
         elif cmd == "updateCheck":
             self._pool.submit(self.update_check)
         elif cmd == "updateApply":
-            self._pool.submit(self.update_apply)
+            # Waits on the runner for minutes; keep it off the shared pool.
+            threading.Thread(target=self.update_apply, daemon=True).start()
 
     def _note_levels(self, ids: list[int], volume: float | None = None, muted: bool | None = None) -> None:
         """Remember a fader move on the device that is playing. Caller holds the lock."""
@@ -389,6 +393,8 @@ class Engine:
         self.settings["active_profile"] = key
         if apply:
             self._apply_profile(chosen, snap)
+            # Says why the faders just moved.
+            self.notice(f"{label}: saved volume and EQ restored")
             return
         chosen.eqs = profiles.clone_eqs(self.eqs)
         self.profiles[key] = chosen
@@ -595,21 +601,85 @@ class Engine:
         try:
             status = updater.check(self.plugin_dir)
         except Exception:
-            status = updater.Status("unknown")
+            status = updater.Status("offline", updater.local_commit(self.plugin_dir))
         self._update_busy = False
-        self.emit({"type": "update", "busy": False, **status.to_dict()})
+        self.emit({"type": "update", "busy": False, "applying": False, **status.to_dict()})
+
+    def update_loop(self) -> None:
+        """Look for updates a minute after start, then every few hours, so the
+        badge shows up without opening the panel first."""
+        time.sleep(UPDATE_FIRST_CHECK)
+        while True:
+            self.update_check()
+            time.sleep(UPDATE_INTERVAL)
 
     def update_apply(self) -> None:
         if self._update_busy:
             return
         self._update_busy = True
-        self.emit({"type": "update", "busy": True, "applying": True})
-        ok = updater.apply(self.plugin_id)
+        self.emit({"type": "update", "busy": True, "applying": True, "message": ""})
+        error = updater.start(self.plugin_dir, self.plugin_id)
+        if error:
+            self._update_busy = False
+            self.emit({"type": "update", "busy": False, "applying": False,
+                       "state": "failed", "message": error})
+            return
+        self._await_update()
+
+    def _await_update(self) -> None:
+        """Wait for the detached runner. A successful update reloads the
+        plugin and ends this engine first; this only reports what did not."""
+        deadline = time.monotonic() + updater.RUN_LIMIT
+        while time.monotonic() < deadline:
+            time.sleep(0.5)
+            result = updater.read_result()
+            if result is None or result.get("running"):
+                continue
+            self._update_busy = False
+            self._report_update(result)
+            return
         self._update_busy = False
-        # On success the shell reloads the plugin and this engine with it.
-        if not ok:
-            self.emit({"type": "update", "busy": False, "state": "failed",
-                       "local": updater.local_commit(self.plugin_dir)})
+        self.emit({"type": "update", "busy": False, "applying": False, "state": "failed",
+                   "message": "The update did not finish; see ~/.local/state/sonus/update.log"})
+
+    def _report_update(self, result: dict) -> None:
+        updater.clear_result()
+        if result.get("ok"):
+            version = result.get("version") or ""
+            text = f"Updated to {version}" if version else "Updated"
+            if result.get("stashed"):
+                text += ". Local edits were set aside with git stash"
+            # The reload closed the panel, so say it on the desktop instead.
+            if not self.active:
+                updater.notify("Sonus updated", text)
+            self.notice(text)
+            self.update_check()
+        elif result.get("current"):
+            self.emit({"type": "update", "busy": False, "applying": False, "state": "current",
+                       "local": updater.local_commit(self.plugin_dir), "checked": time.time()})
+        else:
+            message = result.get("message") or "The update failed"
+            self.emit({"type": "update", "busy": False, "applying": False, "state": "failed",
+                       "local": updater.local_commit(self.plugin_dir), "message": message})
+            if not self.active:
+                updater.notify("Sonus could not update", message)
+            self.notice(f"Update failed: {message}", error=True)
+
+    def resume_update(self) -> None:
+        """Pick up an update this engine's predecessor started: report how it
+        ended, or keep the panel showing it while the runner works."""
+        result = updater.read_result()
+        if result is None:
+            return
+        if updater.running(result):
+            self._update_busy = True
+            self.emit({"type": "update", "busy": True, "applying": True})
+            self._await_update()
+            return
+        if time.time() - float(result.get("at") or 0) < updater.RESULT_FRESH and not result.get("running"):
+            self._report_update(result)
+        else:
+            updater.clear_result()
 
     # ----- main -----------------------------------------------------------
 
@@ -621,6 +691,8 @@ class Engine:
                    "local": updater.local_commit(self.plugin_dir)})
         self._pool.submit(self.setup)
         threading.Thread(target=self.poll_loop, daemon=True).start()
+        threading.Thread(target=self.resume_update, daemon=True).start()
+        threading.Thread(target=self.update_loop, daemon=True).start()
         for line in sys.stdin:
             line = line.strip()
             if not line:
@@ -650,7 +722,11 @@ def main(argv: list[str]) -> int:
                         help="stop the virtual channels and exit")
     parser.add_argument("--snapshot", action="store_true",
                         help="print one graph snapshot as JSON and exit")
+    parser.add_argument("--apply-update", action="store_true",
+                        help="update the plugin checkout (run detached by the panel)")
     args = parser.parse_args(argv)
+    if args.apply_update:
+        return 0 if updater.run(Path(args.plugin_dir), args.plugin_id).get("ok") else 1
     if args.stop_graph:
         GraphProcess().stop()
         return 0

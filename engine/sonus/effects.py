@@ -107,14 +107,6 @@ def launch(hidden: bool = False) -> bool:
     return True
 
 
-def status_text() -> str:
-    if not installed():
-        return "EasyEffects not installed"
-    if not running():
-        return "EasyEffects stopped"
-    return ""
-
-
 # ----- keep EasyEffects from stacking a second EQ ----------------------
 
 

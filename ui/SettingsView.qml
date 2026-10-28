@@ -14,12 +14,45 @@ Column {
 
   spacing: Style.space(12)
 
-  readonly property string updateText: {
-    if (update.busy) return update.applying ? "Updating…" : "Checking…"
-    if (update.state === "current") return "Up to date"
-    if (update.state === "outdated") return "Update"
-    if (update.state === "failed") return "Retry"
-    return "Check"
+  readonly property string updateState: update.state || "unknown"
+
+  // How long ago the last check was, in words.
+  function ago(seconds) {
+    var s = Number(seconds || 0)
+    if (s <= 0) return ""
+    var minutes = Math.floor((Date.now() / 1000 - s) / 60)
+    if (minutes < 1) return "just now"
+    if (minutes < 60) return minutes + " min ago"
+    var hours = Math.floor(minutes / 60)
+    return hours < 24 ? hours + " h ago" : Math.floor(hours / 24) + " d ago"
+  }
+
+  readonly property string updateTitle: {
+    if (update.busy && update.applying) return "Updating…"
+    if (update.busy) return "Checking for updates…"
+    if (updateState === "outdated") return update.version && update.version !== service.version
+      ? "Sonus " + update.version + " is available"
+      : "An update is available"
+    if (updateState === "current") return "Up to date"
+    if (updateState === "offline") return "Could not reach GitHub"
+    if (updateState === "failed") return "The update did not go through"
+    if (updateState === "unmanaged") return "Installed without git"
+    return "Not checked yet"
+  }
+
+  readonly property string updateDetail: {
+    if (update.busy && update.applying) return "Sonus reloads by itself when it is done."
+    if (update.busy) return ""
+    if (updateState === "outdated") {
+      var parts = []
+      if (update.summary) parts.push(update.summary)
+      if (update.modified) parts.push("Your edits in the plugin folder are set aside with git stash first.")
+      return parts.join("\n")
+    }
+    if (updateState === "failed") return update.message || "See ~/.local/state/sonus/update.log"
+    if (updateState === "unmanaged") return "Reinstall with omarchy plugin add to get updates here."
+    if (updateState === "current" || updateState === "offline") return "Checked " + ago(update.checked)
+    return ""
   }
 
   component Caption: Text {
@@ -177,34 +210,68 @@ Column {
 
   Item {
     width: parent.width
-    implicitHeight: Math.max(versionText.implicitHeight, updateButton.implicitHeight)
+    implicitHeight: Math.max(updateText.implicitHeight, updateButton.implicitHeight)
 
-    Text {
-      id: versionText
+    Column {
+      id: updateText
       anchors.left: parent.left
       anchors.leftMargin: Style.space(6)
+      anchors.right: updateButton.left
+      anchors.rightMargin: Style.space(12)
       anchors.verticalCenter: parent.verticalCenter
-      textFormat: Text.PlainText
-      text: view.service
-        ? "Sonus " + view.service.version + (view.update.local ? "  ·  " + String(view.update.local).substring(0, 7) : "")
-        : ""
-      color: view.host.fg
-      font.family: view.host.fontFamily
-      font.pixelSize: Style.font.body
+      spacing: Style.space(2)
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        text: view.updateTitle
+        color: view.updateState === "outdated" && !view.update.busy ? Commons.Color.accent : view.host.fg
+        font.family: view.host.fontFamily
+        font.pixelSize: Style.font.body
+      }
+
+      Caption {
+        host: view.host
+        visible: text !== ""
+        textFormat: Text.PlainText
+        text: view.updateDetail
+      }
     }
 
     Button {
       id: updateButton
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
-      text: view.updateText
-      selected: view.update.state === "outdated" && !view.update.busy
+      visible: view.updateState !== "unmanaged"
+      text: view.update.busy ? (view.update.applying ? "Updating" : "Checking")
+        : view.updateState === "outdated" ? "Update" : "Check now"
+      iconText: view.update.busy ? Glyphs.sync : (view.updateState === "outdated" ? Glyphs.download : "")
+      iconSpinning: !!view.update.busy
+      tooltipText: view.updateState === "outdated"
+        ? "Pull the new version and reload Sonus"
+        : "Look for a new version on GitHub"
+      selected: view.updateState === "outdated" && !view.update.busy
       enabled: !view.update.busy
       bordered: true
       foreground: view.host.fg
       fontFamily: view.host.fontFamily
       fontSize: Style.font.caption
-      onClicked: view.service.updateClicked()
+      onClicked: {
+        if (view.updateState === "outdated") view.service.applyUpdate()
+        else view.service.checkUpdate(0)
+      }
     }
+  }
+
+  Text {
+    leftPadding: Style.space(6)
+    textFormat: Text.PlainText
+    text: view.service
+      ? "Sonus " + view.service.version + (view.update.local ? "  ·  " + String(view.update.local).substring(0, 7) : "")
+      : ""
+    color: view.host.dim
+    font.family: view.host.fontFamily
+    font.pixelSize: Style.font.caption
   }
 }

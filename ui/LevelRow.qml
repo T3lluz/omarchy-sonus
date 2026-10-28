@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // The system level for the output or the input: a mute glyph, the slider and,
@@ -85,21 +86,22 @@ CursorSurface {
       }
     }
 
-    // Lines up under the slider, not the glyph.
+    // Lines up under the slider, not the glyph. Thinner than the slider and
+    // in the accent, so it reads as a meter rather than a second fader.
     Rectangle {
       visible: row.metered
       x: glyphText.width + Style.space(8)
       width: parent.width - x
-      height: Math.max(Style.space(4), Style.spacing.xs)
+      height: Math.max(2, Style.space(3))
       radius: Style.cornerRadius > 0 ? height / 2 : 0
-      color: Qt.rgba(row.host.fg.r, row.host.fg.g, row.host.fg.b, 0.18)
+      color: Qt.rgba(row.host.fg.r, row.host.fg.g, row.host.fg.b, 0.12)
       opacity: row.muted ? 0.35 : 1
 
       Rectangle {
         height: parent.height
         radius: parent.radius
         width: parent.width * Math.max(0, Math.min(1, row.peak))
-        color: row.host.fg
+        color: Commons.Color.accent
         Behavior on width { NumberAnimation { duration: 70 } }
       }
     }

@@ -1,5 +1,8 @@
 # Run with: python3 -m unittest discover tests
+import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -11,9 +14,10 @@ sys.dont_write_bytecode = True
 # config.py reads XDG_CONFIG_HOME on import; point it somewhere disposable.
 _config_home = tempfile.mkdtemp(prefix="sonus-test-")
 os.environ["XDG_CONFIG_HOME"] = _config_home
+os.environ["XDG_STATE_HOME"] = tempfile.mkdtemp(prefix="sonus-state-")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine"))
 
-from sonus import config, eq, graph, pipewire, profiles  # noqa: E402
+from sonus import config, eq, graph, pipewire, profiles, updater  # noqa: E402
 
 
 class ChannelEqTest(unittest.TestCase):
@@ -80,6 +84,18 @@ class PipewireHelpersTest(unittest.TestCase):
         key, label, icon, binary = pipewire._app_identity({"application.process.binary": "Discord", "application.name": "WEBRTC VoiceEngine"})
         self.assertEqual((key, label, icon, binary), ("discord", "WEBRTC VoiceEngine", "discord", "Discord"))
         self.assertEqual(pipewire._app_identity({})[1], "App")
+
+    def test_filter_chain_playback_is_not_an_app(self):
+        tuning = {
+            "media.class": "Stream/Output/Audio",
+            "node.name": "laptop_speakers_playback",
+            "node.link-group": "filter-chain-1168-29",
+            "media.name": "Laptop speakers",
+        }
+        self.assertFalse(pipewire.is_app_stream(tuning))
+        self.assertFalse(pipewire.is_app_stream({"media.class": "Stream/Output/Audio", "node.name": "output.sonusdeck_game"}))
+        self.assertTrue(pipewire.is_app_stream({"media.class": "Stream/Output/Audio", "application.process.binary": "spotify"}))
+        self.assertFalse(pipewire.is_app_stream({"media.class": "Stream/Input/Audio", "application.process.binary": "discord"}))
 
 
 class ProfileTest(unittest.TestCase):
@@ -175,6 +191,80 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(loaded["window"], {"x": 1})
         self.assertTrue(loaded["manage_graph"])
         self.assertTrue(str(config.SETTINGS_PATH).startswith(_config_home))
+
+
+def _git(cwd, *args):
+    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True,
+                   env=dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                            GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t"))
+
+
+@unittest.skipUnless(shutil.which("git"), "needs git")
+class UpdaterTest(unittest.TestCase):
+    """A plugin checkout cloned from a local origin that then moves ahead."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="sonus-update-"))
+        self.origin = self.tmp / "origin"
+        self.origin.mkdir()
+        _git(self.origin, "init", "-q", "-b", "main")
+        (self.origin / "manifest.json").write_text(json.dumps({"version": "1.0.0"}))
+        _git(self.origin, "add", ".")
+        _git(self.origin, "commit", "-qm", "first")
+        self.plugin = self.tmp / "plugin"
+        _git(self.tmp, "clone", "-q", str(self.origin), str(self.plugin))
+        (self.origin / "manifest.json").write_text(json.dumps({"version": "1.1.0"}))
+        _git(self.origin, "commit", "-qam", "Sonus 1.1: better")
+        # Stands in for `omarchy plugin update`: fast-forward or fail.
+        self.bin = self.tmp / "bin"
+        self.bin.mkdir()
+        script = self.bin / "omarchy-plugin-update"
+        script.write_text(
+            "#!/bin/bash\n"
+            f'cd "{self.plugin}" && git fetch -q origin HEAD && git merge -q --ff-only FETCH_HEAD '
+            '|| { echo "omarchy-plugin-update: cannot fast-forward" >&2; exit 1; }\n'
+        )
+        script.chmod(0o755)
+        self.path = os.environ["PATH"]
+        os.environ["PATH"] = f"{self.bin}:{self.path}"
+
+    def tearDown(self):
+        os.environ["PATH"] = self.path
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        updater.clear_result()
+
+    def test_check_reports_the_new_version_and_local_edits(self):
+        status = updater.check(self.plugin)
+        self.assertEqual(status.state, "outdated")
+        self.assertEqual(status.version, "1.1.0")
+        self.assertEqual(status.summary, "Sonus 1.1: better")
+        self.assertEqual(status.behind, 1)
+        self.assertFalse(status.modified)
+        (self.plugin / "Panel.qml").write_text("// a local edit")
+        self.assertTrue(updater.check(self.plugin).modified)
+
+    def test_a_folder_without_git_is_unmanaged(self):
+        self.assertEqual(updater.check(self.tmp / "bin").state, "unmanaged")
+
+    def test_run_sets_local_edits_aside_and_updates(self):
+        (self.plugin / "manifest.json").write_text(json.dumps({"version": "1.0.0-local"}))
+        (self.plugin / "extra.qml").write_text("// untracked")
+        result = updater.run(self.plugin, "io.example.sonus")
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["stashed"])
+        self.assertEqual(result["version"], "1.1.0")
+        self.assertEqual(updater.read_result()["version"], "1.1.0")
+        self.assertFalse(updater.modified(self.plugin))
+
+    def test_a_failed_run_puts_local_edits_back(self):
+        (self.origin / "manifest.json").write_text(json.dumps({"version": "2.0.0"}))
+        _git(self.plugin, "commit", "-qam", "diverged", "--allow-empty")
+        _git(self.origin, "commit", "-qam", "upstream")
+        (self.plugin / "notes.txt").write_text("keep me")
+        result = updater.run(self.plugin, "io.example.sonus")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["message"], "cannot fast-forward")
+        self.assertEqual((self.plugin / "notes.txt").read_text(), "keep me")
 
 
 if __name__ == "__main__":
