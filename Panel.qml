@@ -50,6 +50,43 @@ Panel {
     return level.muted ? "muted" : Math.round(level.shownVolume * 100) + "%"
   }
 
+  // ---- banners ----------------------------------------------------------------
+
+  // The update banner text the user closed; a different one shows again.
+  property string dismissedUpdate: ""
+
+  // Over the mixer, most urgent first, as the other plugins' banners. The
+  // engine says itself how an update ended, as one of its own notices.
+  readonly property var notices: {
+    var s = service
+    var list = []
+    if (!s) return list
+    if (s.legacy) list.push({ key: "legacy", tone: "urgent", icon: Glyphs.alert,
+      text: "The Sonus desktop app is still running. Routing is paused here until you switch.",
+      action: "takeOver", actionLabel: "Switch" })
+    if (s.noticeText !== "") list.push({ key: "engine", tone: s.noticeError ? "urgent" : "accent",
+      icon: s.noticeError ? Glyphs.alert : Glyphs.info, text: s.noticeText, dismissable: true })
+    var update = null
+    if (s.update.busy && s.update.applying)
+      update = { key: "update", tone: "accent", icon: Glyphs.update, text: "Updating Sonus…", busy: true }
+    else if (s.updateAvailable)
+      update = { key: "update", tone: "accent", icon: Glyphs.update, action: "update", actionLabel: "Update", dismissable: true,
+                 text: s.update.version && s.update.version !== s.version ? "Sonus " + s.update.version + " is available" : "A Sonus update is available" }
+    if (update && update.text !== dismissedUpdate) list.push(update)
+    return list
+  }
+
+  function noticeAction(notice) {
+    if (!service) return
+    if (notice.action === "takeOver") service.takeOver()
+    else if (notice.action === "update") service.applyUpdate()
+  }
+
+  function dismissNotice(notice) {
+    if (notice.key === "engine" && service) service.dismissNotice()
+    else if (notice.key === "update") dismissedUpdate = notice.text
+  }
+
   // ---- views ------------------------------------------------------------------
 
   property string view: "mixer"
@@ -462,177 +499,55 @@ Panel {
             width: flick.width
             spacing: Style.space(14)
 
-            Item {
+            PanelHero {
               width: parent.width
-              implicitHeight: Math.max(heroMark.height, heroText.implicitHeight, settingsButton.implicitHeight)
-
-              SonusMark {
-                id: heroMark
-                width: Style.font.display
-                height: width
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                color: root.fg
-                muted: !!(root.service && root.service.masterMuted)
+              title: "Sonus"
+              meta: {
+                var s = root.service
+                if (!s || !s.engineUp) return "Starting"
+                var name = s.outputLabel || (s.master ? s.master.description : "Output")
+                return name + " · " + Audio.volumeName(outputLevel.shownVolume, s.masterMuted)
               }
-
-              Column {
-                id: heroText
-                anchors.left: heroMark.right
-                anchors.leftMargin: Style.space(14)
-                anchors.right: settingsButton.left
-                anchors.rightMargin: Style.space(12)
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(2)
-
-                Text {
-                  width: parent.width
-                  textFormat: Text.PlainText
-                  text: "Sonus"
-                  color: root.fg
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.title
-                  font.bold: true
-                  elide: Text.ElideRight
-                }
-
-                Text {
-                  width: parent.width
-                  textFormat: Text.PlainText
-                  text: {
-                    var s = root.service
-                    if (!s || !s.engineUp) return "STARTING"
-                    var name = s.outputLabel || (s.master ? s.master.description : "Output")
-                    return (name + "  ·  " + Audio.volumeName(outputLevel.shownVolume, s.masterMuted)).toUpperCase()
-                  }
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
-                  font.letterSpacing: 1.2
-                  elide: Text.ElideRight
-                }
-              }
-
-              PanelActionButton {
-                id: settingsButton
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                iconText: Glyphs.cog
-                tooltipText: root.service && root.service.updateAvailable ? "Settings (s) · update available" : "Settings (s)"
-                foreground: root.fg
-                fontFamily: root.fontFamily
-                onClicked: root.setView("settings")
-
-                // An update is waiting.
-                Rectangle {
-                  visible: !!root.service && root.service.updateAvailable
-                  width: Style.space(7)
+              foreground: root.fg
+              fontFamily: root.fontFamily
+              iconComponent: Component {
+                SonusMark {
+                  width: Style.font.display
                   height: width
-                  radius: width / 2
-                  color: Commons.Color.accent
-                  anchors.top: parent.top
-                  anchors.right: parent.right
-                }
-              }
-            }
-
-            // What the engine has to say: a restored device mix, a failed
-            // write, an update. Click to dismiss; it also goes by itself.
-            CursorSurface {
-              visible: !!root.service && root.service.noticeText !== ""
-              width: parent.width
-              implicitHeight: noticeRow.implicitHeight + Style.spacing.lg
-              current: true
-              foreground: root.fg
-              currentFill: root.service && root.service.noticeError
-                ? Style.selectedFillFor(Commons.Color.urgent, Commons.Color.urgent)
-                : root.selectedFill
-
-              Row {
-                id: noticeRow
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: Style.space(8)
-                anchors.rightMargin: Style.space(8)
-                spacing: Style.space(8)
-
-                Text {
-                  id: noticeGlyph
-                  width: Style.space(22)
-                  horizontalAlignment: Text.AlignHCenter
-                  anchors.verticalCenter: parent.verticalCenter
-                  textFormat: Text.PlainText
-                  text: root.service && root.service.noticeError ? Glyphs.alert : Glyphs.info
-                  color: root.service && root.service.noticeError ? Commons.Color.urgent : root.fg
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                }
-
-                Text {
-                  width: parent.width - noticeGlyph.width - parent.spacing
-                  anchors.verticalCenter: parent.verticalCenter
-                  textFormat: Text.PlainText
-                  wrapMode: Text.WordWrap
-                  text: root.service ? root.service.noticeText : ""
                   color: root.fg
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
+                  muted: !!(root.service && root.service.masterMuted)
                 }
               }
-
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.service.dismissNotice()
-              }
-            }
-
-            // The desktop app would fight this panel over routes.
-            CursorSurface {
-              visible: !!root.service && root.service.legacy
-              width: parent.width
-              implicitHeight: legacyRow.implicitHeight + Style.spacing.xl
-              current: true
-              foreground: root.fg
-              currentFill: Style.selectedFillFor(Commons.Color.urgent, Commons.Color.urgent)
-
-              Item {
-                id: legacyRow
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: Style.space(8)
-                anchors.rightMargin: Style.space(8)
-                implicitHeight: Math.max(legacyText.implicitHeight, switchButton.implicitHeight)
-
-                Text {
-                  id: legacyText
-                  anchors.left: parent.left
-                  anchors.right: switchButton.left
-                  anchors.rightMargin: Style.space(10)
-                  anchors.verticalCenter: parent.verticalCenter
-                  wrapMode: Text.WordWrap
-                  text: "The Sonus desktop app is still running. Routing is paused here until you switch."
-                  color: root.fg
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-
-                Button {
-                  id: switchButton
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: "Switch"
-                  tooltipText: "Stop the desktop app and its autostart; Sonus runs here from now on"
-                  bordered: true
-                  selected: true
+              trailingControl: Component {
+                PanelActionButton {
+                  iconText: Glyphs.cog
+                  tooltipText: "Settings (s)"
                   foreground: root.fg
                   fontFamily: root.fontFamily
-                  fontSize: Style.font.caption
-                  onClicked: root.service.takeOver()
+                  onClicked: root.setView("settings")
                 }
+              }
+            }
+
+            // What the engine has to say (a restored device mix, a failed
+            // write), the desktop app in the way, an update: the panel kit's
+            // banners, as in the other plugins.
+            Repeater {
+              model: root.notices
+
+              Notice {
+                required property var modelData
+                width: mixerColumn.width
+                icon: modelData.icon
+                text: modelData.text
+                tone: modelData.tone
+                actionLabel: modelData.actionLabel || ""
+                busy: !!modelData.busy
+                dismissable: !!modelData.dismissable
+                foreground: root.fg
+                fontFamily: root.fontFamily
+                onActioned: root.noticeAction(modelData)
+                onDismissed: root.dismissNotice(modelData)
               }
             }
 
@@ -641,6 +556,7 @@ Panel {
               id: outputSection
               width: parent.width
               key: "master"
+              icon: Glyphs.speaker
               title: "OUTPUT"
               meta: root.levelText(outputLevel)
               hot: root.dragKey !== "" && root.dropTarget === "master"
@@ -664,19 +580,20 @@ Panel {
                 }
               }
 
-              Text {
+              Caption {
                 visible: !root.service || !root.service.outputs || root.service.outputs.length === 0
-                leftPadding: Style.space(6)
+                width: parent.width
+                leftPadding: Style.space(8)
                 text: "No output devices"
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
+                foreground: root.fg
+                fontFamily: root.fontFamily
               }
             }
 
             Section {
               width: parent.width
               visible: root.hasInput || (!!root.service && !!root.service.inputs && root.service.inputs.length > 0)
+              icon: Glyphs.microphone
               title: "INPUT"
               meta: root.hasInput ? root.levelText(inputLevel) : ""
               foreground: root.fg
@@ -705,6 +622,7 @@ Panel {
 
             Section {
               width: parent.width
+              icon: Glyphs.sliders
               title: "CHANNELS"
               foreground: root.fg
               fontFamily: root.fontFamily
@@ -726,18 +644,19 @@ Panel {
 
             Section {
               width: parent.width
+              icon: Glyphs.apps
               title: "APPS"
               meta: root.service && root.service.appsModel.count > 0 ? "drag onto a channel" : ""
               foreground: root.fg
               fontFamily: root.fontFamily
 
-              Text {
+              Caption {
                 visible: !root.service || root.service.appsModel.count === 0
-                leftPadding: Style.space(6)
+                width: parent.width
+                leftPadding: Style.space(8)
                 text: "Apps show up here while they play."
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
+                foreground: root.fg
+                fontFamily: root.fontFamily
               }
 
               Repeater {

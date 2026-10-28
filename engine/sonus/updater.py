@@ -97,6 +97,39 @@ def modified(root: Path) -> bool:
     return ok and bool(out)
 
 
+def edits_match_remote(root: Path) -> bool:
+    """Whether every local edit already is what the remote has: the update's
+    files copied in by hand, as a development copy gets them."""
+    ok, _ = _git(root, "fetch", "--quiet", "origin", "HEAD", timeout=_TIMEOUT)
+    if not ok:
+        return False
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    try:
+        status = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "-z", "--untracked-files=all"],
+                                capture_output=True, timeout=5.0, env=env, stdin=subprocess.DEVNULL).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    entries = [e for e in status.split(b"\0") if e]
+    paths = [e[3:].decode("utf-8", "surrogateescape") for e in entries if len(e) > 3]
+    if not paths or any(e[:1] in (b"R", b"C") for e in entries):
+        return False
+    for path in paths:
+        try:
+            wanted = subprocess.run(["git", "-C", str(root), "cat-file", "blob", "FETCH_HEAD:" + path],
+                                    capture_output=True, timeout=5.0, env=env, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        try:
+            have = (root / path).read_bytes()
+        except FileNotFoundError:
+            have = None
+        except OSError:
+            return False
+        if have != (wanted.stdout if wanted.returncode == 0 else None):
+            return False
+    return True
+
+
 def manifest_version(text: str) -> str:
     try:
         data = json.loads(text)
@@ -239,8 +272,12 @@ def run(root: Path, plugin_id: str) -> dict:
     message = ""
     ok = False
     output = ""
+    same = False
     if modified(root):
-        stashed, _ = _git(root, "stash", "push", "--include-untracked",
+        same = edits_match_remote(root)
+        # A stash is a commit; give it a name for a git with no identity set.
+        stashed, _ = _git(root, "-c", "user.name=Sonus", "-c", "user.email=sonus@localhost",
+                          "stash", "push", "--include-untracked",
                           "--message", "Sonus: local changes set aside by the panel's update",
                           timeout=30.0)
         if not stashed:
@@ -261,6 +298,10 @@ def run(root: Path, plugin_id: str) -> dict:
     if not ok and stashed:
         # Nothing moved, so the edits go back where they were.
         _git(root, "stash", "pop", timeout=30.0)
+        stashed = False
+    elif stashed and same:
+        # The edits were the update itself; there is nothing to keep.
+        _git(root, "stash", "drop", timeout=30.0)
         stashed = False
     result = {
         "running": False,

@@ -34,13 +34,13 @@ CursorSurface {
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
-    anchors.leftMargin: Style.space(6)
-    anchors.rightMargin: Style.space(6)
+    anchors.leftMargin: Style.space(8)
+    anchors.rightMargin: Style.space(8)
     spacing: Style.space(5)
 
     Row {
       width: parent.width
-      spacing: Style.space(8)
+      spacing: Style.space(10)
 
       Text {
         id: glyphText
@@ -90,7 +90,7 @@ CursorSurface {
     // in the accent, so it reads as a meter rather than a second fader.
     Rectangle {
       visible: row.metered
-      x: glyphText.width + Style.space(8)
+      x: glyphText.width + Style.space(10)
       width: parent.width - x
       height: Math.max(2, Style.space(3))
       radius: Style.cornerRadius > 0 ? height / 2 : 0

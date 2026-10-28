@@ -106,87 +106,71 @@ Column {
 
   // ---- header -----------------------------------------------------------------
 
-  Item {
+  // The hero, as on every panel of the family: the channel, what the EQ is
+  // doing, and on the right the bypass switch and the way back.
+  PanelHero {
     width: parent.width
-    implicitHeight: Math.max(backButton.height, toggle.implicitHeight)
-
-    PanelActionButton {
-      id: backButton
-      anchors.left: parent.left
-      anchors.verticalCenter: parent.verticalCenter
-      iconText: Glyphs.back
-      tooltipText: "Back (esc)"
-      foreground: view.host.fg
-      fontFamily: view.host.fontFamily
-      onClicked: view.host.setView("mixer")
-    }
-
-    Column {
-      anchors.left: backButton.right
-      anchors.leftMargin: Style.space(10)
-      anchors.right: toggle.left
-      anchors.rightMargin: Style.space(10)
-      anchors.verticalCenter: parent.verticalCenter
-      spacing: Style.space(2)
-
-      Text {
-        text: view.title + " equalizer"
-        color: view.host.fg
-        font.family: view.host.fontFamily
-        font.pixelSize: Style.font.title
-        font.bold: true
-        elide: Text.ElideRight
-        width: parent.width
-      }
-
+    title: view.title + " equalizer"
+    meta: (view.eqEnabled ? (view.presetName || "Custom") : "Bypassed") + " · preamp " + Eq.dbText(view.preamp)
+    foreground: view.host.fg
+    fontFamily: view.host.fontFamily
+    iconComponent: Component {
       Text {
         textFormat: Text.PlainText
-        text: (view.eqEnabled ? (view.presetName || "Custom") : "Bypassed").toUpperCase()
-          + "  ·  PREAMP " + Eq.dbText(view.preamp).toUpperCase()
-        color: view.host.dim
+        text: Glyphs.channel(view.key)
+        color: view.host.fg
         font.family: view.host.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
-        font.letterSpacing: 1.2
-        elide: Text.ElideRight
-        width: parent.width
+        font.pixelSize: Style.font.display
       }
     }
+    trailingControl: Component {
+      Row {
+        spacing: Style.space(10)
 
-    ToggleSwitch {
-      id: toggle
-      anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
-      checked: view.eqEnabled
-      foreground: view.host.fg
-      onToggled: {
-        view.eqEnabled = !view.eqEnabled
-        view.commit()
-      }
+        ToggleSwitch {
+          id: toggle
+          anchors.verticalCenter: parent.verticalCenter
+          checked: view.eqEnabled
+          foreground: view.host.fg
+          onToggled: {
+            view.eqEnabled = !view.eqEnabled
+            view.commit()
+          }
 
-      PanelToolTip {
-        visible: toggle.containsMouse
-        text: view.eqEnabled ? "Bypass the EQ (space)" : "Enable the EQ (space)"
-        fontFamily: view.host.fontFamily
+          PanelToolTip {
+            visible: toggle.containsMouse
+            text: view.eqEnabled ? "Bypass the EQ (space)" : "Enable the EQ (space)"
+            fontFamily: view.host.fontFamily
+          }
+        }
+
+        PanelActionButton {
+          anchors.verticalCenter: parent.verticalCenter
+          iconText: Glyphs.back
+          tooltipText: "Back to the mixer (esc)"
+          foreground: view.host.fg
+          fontFamily: view.host.fontFamily
+          onClicked: view.host.setView("mixer")
+        }
       }
     }
   }
 
   PanelSeparator { foreground: view.host.fg }
 
-  PanelSectionHeader {
-    text: "PRESETS"
+  SectionHeader {
+    icon: Glyphs.sliders
+    title: "PRESETS"
     foreground: view.host.fg
     fontFamily: view.host.fontFamily
   }
 
-  ButtonGroup {
-    options: Eq.PRESETS.map(function(p) { return p.name })
+  Seg {
+    options: Eq.PRESETS.map(function(p) { return { value: p.name, label: p.name } })
     value: view.presetName
     foreground: view.host.fg
     fontFamily: view.host.fontFamily
-    fontSize: Style.font.caption
-    onChanged: function(value) { view.applyPreset(value) }
+    onPicked: function(value) { view.applyPreset(value) }
   }
 
   // ---- bands ----------------------------------------------------------------
@@ -349,30 +333,12 @@ Column {
 
   // ---- preamp -----------------------------------------------------------------
 
-  Item {
-    width: parent.width
-    implicitHeight: Math.max(preHeader.implicitHeight, preValue.implicitHeight)
-
-    PanelSectionHeader {
-      id: preHeader
-      text: "PREAMP"
-      foreground: view.host.fg
-      fontFamily: view.host.fontFamily
-      anchors.left: parent.left
-      anchors.verticalCenter: parent.verticalCenter
-    }
-
-    Text {
-      id: preValue
-      anchors.right: parent.right
-      anchors.rightMargin: Style.space(6)
-      anchors.verticalCenter: parent.verticalCenter
-      text: Eq.dbText(preSlider.dragging ? preSlider.liveValue : view.preamp)
-      color: view.host.dim
-      font.family: view.host.fontFamily
-      font.pixelSize: Style.font.caption
-      font.bold: true
-    }
+  SectionHeader {
+    icon: Glyphs.volumeMid
+    title: "PREAMP"
+    detail: Eq.dbText(preSlider.dragging ? preSlider.liveValue : view.preamp).toUpperCase()
+    foreground: view.host.fg
+    fontFamily: view.host.fontFamily
   }
 
   PanelSlider {

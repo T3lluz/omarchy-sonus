@@ -38,8 +38,8 @@ CursorSurface {
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
-    anchors.leftMargin: Style.space(6)
-    anchors.rightMargin: Style.space(6)
+    anchors.leftMargin: Style.space(8)
+    anchors.rightMargin: Style.space(8)
     spacing: Style.space(2)
 
     Item {
@@ -79,7 +79,7 @@ CursorSurface {
       Text {
         id: name
         anchors.left: icon.right
-        anchors.leftMargin: Style.space(8)
+        anchors.leftMargin: Style.space(10)
         anchors.right: chooser.left
         anchors.rightMargin: Style.space(8)
         anchors.verticalCenter: parent.verticalCenter

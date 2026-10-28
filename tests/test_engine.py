@@ -256,6 +256,16 @@ class UpdaterTest(unittest.TestCase):
         self.assertEqual(updater.read_result()["version"], "1.1.0")
         self.assertFalse(updater.modified(self.plugin))
 
+    def test_edits_that_are_the_update_leave_no_stash(self):
+        # The update's files copied in by hand, as a development copy has them.
+        (self.plugin / "manifest.json").write_text(json.dumps({"version": "1.1.0"}))
+        result = updater.run(self.plugin, "io.example.sonus")
+        self.assertTrue(result["ok"], result)
+        self.assertFalse(result["stashed"])
+        stashes = subprocess.run(["git", "-C", str(self.plugin), "stash", "list"],
+                                 capture_output=True, text=True).stdout
+        self.assertEqual(stashes.strip(), "")
+
     def test_a_failed_run_puts_local_edits_back(self):
         (self.origin / "manifest.json").write_text(json.dumps({"version": "2.0.0"}))
         _git(self.plugin, "commit", "-qam", "diverged", "--allow-empty")

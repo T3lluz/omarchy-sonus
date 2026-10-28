@@ -32,6 +32,8 @@ var sync = g(0xF04E6)
 var download = g(0xF01DA)
 var alert = g(0xF0026)
 var info = g(0xF02FD)
+var keyboard = g(0xF030C)
+var update = g(0xF06B0)
 
 function deviceGlyph(form) {
   if (form === "headphones") return headphones

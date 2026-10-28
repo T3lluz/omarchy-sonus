@@ -5,7 +5,7 @@ How Sonus is put together, for anyone (or any agent) changing it. The user-facin
 ## Layout
 
 - `Service.qml`: always loaded. Runs `bin/sonus-engine` and talks JSON lines with it; mirrors its state for the panel; owns the `sonus` IPC target.
-- `Panel.qml`, `ui/`: the bar entry and panel, once per monitor, all reading the one service. `ui/Eq.js` is the panel's copy of the EQ model.
+- `Panel.qml`, `ui/`: the bar entry and panel, once per monitor, all reading the one service. `ui/Eq.js` is the panel's copy of the EQ model. `ui/` also holds the panel kit (below).
 - `engine/sonus/`: the engine (Python, stdlib only). `graph.py` renders and runs the filter-chain graph as `sonus-graph.service`; `pipewire.py` reads and moves streams; `eq.py` is the EQ model; `profiles.py` is the per-output-device volume and EQ; `config.py` the settings in `~/.config/sonusdeck/settings.json`, shared with the Sonus desktop app.
 - `bin/sonus-engine`: the entry point. It sets `sys.dont_write_bytecode` so `engine/` never gains a `__pycache__`.
 
@@ -20,6 +20,12 @@ omarchy-shell sonus status | jq
 `ui/Eq.js` and `engine/sonus/eq.py` must agree on the bands; `tests/eq.test.js` checks it.
 
 Sonus keeps its own settings file rather than `shell.json`, so the `WidgetSettings.qml` rule below does not apply to it; the rest does.
+
+## Panel kit
+
+`SectionHeader`, `StatTile`, `ToggleTile`, `SwitchRow`, `Seg`, `Notice`, `LevelBar`, `OptionRow`, `Caption` and `UpdateSection` in `ui/` are the panel kit: the same files, byte for byte, in ROG Deck, Batteries, Sonus and Server Dashboard, so the four look like one family. Change a kit file in all four or not at all. `Glyph.qml` is the one part each plugin owns: Nerd Font glyphs here, drawn Tabler icons in Batteries.
+
+Panels never cut text: a `Notice` shows all of its message, a `Caption` breaks long words and paths, and a `ToggleTile` label that does not fit shows in full in its tooltip.
 
 ## Rules that are easy to break
 
