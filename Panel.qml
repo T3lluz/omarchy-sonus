@@ -65,7 +65,8 @@ Panel {
       text: "The Sonus desktop app is still running. Routing is paused here until you switch.",
       action: "takeOver", actionLabel: "Switch" })
     if (s.noticeText !== "") list.push({ key: "engine", tone: s.noticeError ? "urgent" : "accent",
-      icon: s.noticeError ? Glyphs.alert : Glyphs.info, text: s.noticeText, dismissable: true })
+      icon: s.noticeError ? Glyphs.alert : s.noticeForm !== "" ? Glyphs.deviceGlyph(s.noticeForm) : Glyphs.info,
+      text: s.noticeText, dismissable: true })
     var update = null
     if (s.update.busy && s.update.applying)
       update = { key: "update", tone: "accent", icon: Glyphs.update, text: "Updating Sonus…", busy: true }
@@ -101,6 +102,14 @@ Panel {
   function eqActive(key) {
     var st = Eq.normalized(service && service.eqs ? service.eqs[key] : null)
     return st.enabled && !Eq.isFlat(st)
+  }
+
+  // What the device in use carries of its own mix, under its row: the
+  // channels whose EQ shapes the sound.
+  readonly property string profileLine: {
+    var on = []
+    for (var i = 0; i < categories.length; i++) if (eqActive(categories[i].key)) on.push(categories[i].title)
+    return "Own mix · " + (on.length ? "EQ on " + on.join(", ") : "flat EQ")
   }
 
   function openEq(key) {
@@ -510,12 +519,15 @@ Panel {
               }
               foreground: root.fg
               fontFamily: root.fontFamily
+              // The device in use, as in Omarchy's Audio panel: laptop,
+              // headphones, AirPods. Dimmed while muted.
               iconComponent: Component {
-                SonusMark {
-                  width: Style.font.display
-                  height: width
+                Glyph {
+                  size: Style.font.display
+                  icon: Glyphs.deviceGlyph(root.service ? root.service.outputForm : "")
                   color: root.fg
-                  muted: !!(root.service && root.service.masterMuted)
+                  fontFamily: root.fontFamily
+                  opacity: root.service && root.service.masterMuted ? 0.5 : 1
                 }
               }
               trailingControl: Component {
@@ -568,7 +580,7 @@ Panel {
                 host: root
                 key: "master"
                 cursor: "vol:out"
-                glyph: Glyphs.outputIcon(root.service ? root.service.outputForm : "", muted, shownVolume)
+                glyph: Glyphs.levelIcon(muted, shownVolume)
               }
 
               Repeater {

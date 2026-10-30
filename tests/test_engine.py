@@ -152,7 +152,7 @@ class ProfileTest(unittest.TestCase):
         ]
         outputs, inputs, label, form = pipewire.build_endpoints(
             records, {}, "easyeffects_sink", "alsa_output.pci-0000_00_1f.3.analog-stereo",
-            "alsa_input.pci-0000_00_1f.3.analog-stereo",
+            "alsa_input.pci-0000_00_1f.3.analog-stereo", laptop=False,
         )
         names = [item.name for item in outputs]
         self.assertEqual(names, [
@@ -162,13 +162,46 @@ class ProfileTest(unittest.TestCase):
         self.assertTrue(outputs[0].active)
         self.assertFalse(outputs[1].active)
         self.assertEqual(outputs[0].label, "Speakers")
-        self.assertEqual(outputs[1].form, "headphones")
+        self.assertEqual(outputs[1].form, "earbuds")
         self.assertEqual(outputs[1].key, "bluez:aa:bb:cc:dd:ee:ff")
         self.assertEqual(label, "Speakers")
         self.assertEqual(form, "speaker")
         self.assertEqual([item.name for item in inputs], ["alsa_input.pci-0000_00_1f.3.analog-stereo"])
         self.assertTrue(inputs[0].active)
         self.assertEqual(inputs[0].label, "Microphone")
+
+    def test_device_forms(self):
+        form = profiles.device_form
+        # One sound card: the port in use decides speakers or headphones.
+        card = ("alsa_output.pci-0000_75_00.6.analog-stereo", "Ryzen HD Audio Controller Analog Stereo", "audio-card-analog")
+        self.assertEqual(form(*card, "sink", bus="pci", port="analog-output-speaker Speakers", laptop=True), "laptop")
+        self.assertEqual(form(*card, "sink", bus="pci", port="analog-output-speaker Speakers", laptop=False), "speaker")
+        self.assertEqual(form(*card, "sink", bus="pci", port="analog-output-headphones Headphones", laptop=True), "headphones")
+        # Omarchy's speaker tuning has no device behind it, only its name.
+        self.assertEqual(form("laptop_speakers", "Laptop speakers", "", "sink", laptop=True), "laptop")
+        self.assertEqual(form("bluez_output.AA_BB_CC_DD_EE_FF.1", "AirPods Pro", "audio-headphones", "sink",
+                              form_factor="headphone", bus="bluetooth"), "earbuds")
+        self.assertEqual(form("bluez_output.11_22_33_44_55_66.1", "WH-1000XM5", "audio-headphones", "sink",
+                              form_factor="headphone", bus="bluetooth"), "headphones")
+        self.assertEqual(form("bluez_output.11_22_33_44_55_66.1", "Jabra", "", "sink",
+                              form_factor="headset", bus="bluetooth"), "headset")
+        self.assertEqual(form("bluez_output.11_22_33_44_55_66.1", "JBL Flip 6", "", "sink", bus="bluetooth"), "bluetooth")
+        self.assertEqual(form("alsa_output.pci-0000_75_00.1.hdmi-stereo", "HDMI / DisplayPort", "", "sink", bus="pci"), "hdmi")
+        self.assertEqual(form("alsa_output.pci-0000_75_00.1.hdmi-stereo", "LG TV", "", "sink", bus="pci"), "tv")
+        self.assertEqual(form("alsa_output.usb-dac", "USB Audio", "", "sink", bus="usb", laptop=True), "speaker")
+        self.assertEqual(form("alsa_input.pci-mic", "Internal Microphone", "", "source", bus="pci"), "mic")
+        self.assertEqual(form("bluez_input.AA_BB_CC_DD_EE_FF.0", "Jabra", "", "source", bus="bluetooth"), "headset")
+
+    def test_active_port_is_read_from_the_card(self):
+        objects = [{"id": 53, "type": "PipeWire:Interface:Device", "info": {"params": {"Route": [
+            {"name": "analog-input-internal-mic", "description": "Internal Microphone", "direction": "Input", "device": 0},
+            {"name": "analog-output-headphones", "description": "Headphones", "direction": "Output", "device": 4},
+        ]}}}]
+        props = {"node.name": "alsa_output.pci.analog-stereo", "media.class": "Audio/Sink",
+                 "device.id": 53, "card.profile.device": 4, "device.bus": "pci"}
+        records = pipewire._plain_records([({"id": 7}, {}, props)], pipewire._active_ports(objects))
+        self.assertEqual(records[0]["port"], "analog-output-headphones Headphones")
+        self.assertEqual(profiles.record_form(records[0], "sink", laptop=True), "headphones")
 
     def test_unavailable_sink_is_hidden(self):
         records = [

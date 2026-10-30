@@ -10,8 +10,13 @@ var volumeMid = g(0xF0580)
 var volumeLow = g(0xF057F)
 var volumeOff = g(0xF0581)
 var headphones = g(0xF02CB)
+var earbuds = g(0xF184F)
+var laptop = g(0xF0322)
 var bluetooth = g(0xF00AF)
+var speakerBluetooth = g(0xF09A2)
 var monitor = g(0xF0379)
+var monitorSpeaker = g(0xF0F5F)
+var television = g(0xF0502)
 var microphone = g(0xF036C)
 var microphoneOff = g(0xF036D)
 var camera = g(0xF0100)
@@ -35,22 +40,34 @@ var info = g(0xF02FD)
 var keyboard = g(0xF030C)
 var update = g(0xF06B0)
 
+// The engine's coarse device shapes (profiles.device_form) as icons.
 function deviceGlyph(form) {
+  if (form === "laptop") return laptop
   if (form === "headphones") return headphones
-  if (form === "bluetooth") return bluetooth
-  if (form === "hdmi") return monitor
+  if (form === "headset") return headset
+  if (form === "earbuds") return earbuds
+  if (form === "bluetooth") return speakerBluetooth
+  if (form === "hdmi") return monitorSpeaker
+  if (form === "tv") return television
   if (form === "mic") return microphone
   if (form === "camera") return camera
   return speaker
 }
 
-// The bar icon: headphones stay headphones, everything else follows the level.
-function outputIcon(form, muted, volume) {
+// The volume level, as Omarchy's own volume icon.
+function levelIcon(muted, volume) {
   if (muted || !(volume > 0)) return volumeOff
-  if (form === "headphones") return headphones
   if (volume >= 0.67) return volumeHigh
   if (volume >= 0.34) return volumeMid
   return volumeLow
+}
+
+// The volume toast. The machine's own speakers are the usual case and show
+// the level; anything else (headphones, AirPods, a Bluetooth speaker, a
+// monitor) shows itself, so a glance says where the sound goes.
+function outputIcon(form, muted, volume) {
+  if (muted || !(volume > 0) || form === "laptop" || form === "speaker" || !form) return levelIcon(muted, volume)
+  return deviceGlyph(form)
 }
 
 function channel(key) {

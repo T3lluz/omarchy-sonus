@@ -238,9 +238,35 @@ def sink_availability() -> dict[str, bool]:
     return found
 
 
-def _plain_records(nodes: list[tuple[dict, dict, dict]]) -> list[dict]:
+def _active_ports(objects: list[dict]) -> dict[tuple[int, int, str], str]:
+    """The port each card plays or records through: (card id, card device,
+    direction) to the port's name and description, e.g. "analog-output-headphones
+    Headphones". One sink is the speakers or the headphones by this alone."""
+    ports: dict[tuple[int, int, str], str] = {}
+    for obj in objects:
+        if obj.get("type") != "PipeWire:Interface:Device":
+            continue
+        params = (obj.get("info") or {}).get("params") or {}
+        for route in params.get("Route") or []:
+            if not isinstance(route, dict):
+                continue
+            try:
+                key = (int(obj.get("id") or 0), int(route.get("device")), str(route.get("direction") or ""))
+            except (TypeError, ValueError):
+                continue
+            ports[key] = f"{route.get('name') or ''} {route.get('description') or ''}".strip()
+    return ports
+
+
+def _plain_records(nodes: list[tuple[dict, dict, dict]], ports: dict | None = None) -> list[dict]:
+    ports = ports or {}
     records = []
     for obj, _info, props in nodes:
+        direction = "Output" if str(props.get("media.class") or "") == "Audio/Sink" else "Input"
+        try:
+            port = ports.get((int(props.get("device.id")), int(props.get("card.profile.device")), direction), "")
+        except (TypeError, ValueError):
+            port = ""
         records.append({
             "id": int(obj.get("id") or 0),
             "name": str(props.get("node.name") or ""),
@@ -249,6 +275,9 @@ def _plain_records(nodes: list[tuple[dict, dict, dict]]) -> list[dict]:
             "profile": str(props.get("device.profile.description") or ""),
             "media_class": str(props.get("media.class") or ""),
             "icon": str(props.get("device.icon-name") or ""),
+            "form_factor": str(props.get("device.form-factor") or ""),
+            "bus": str(props.get("device.bus") or ""),
+            "port": port,
         })
     return records
 
@@ -259,6 +288,7 @@ def build_endpoints(
     default_sink: str,
     volume_sink: str,
     default_source: str,
+    laptop: bool | None = None,
 ) -> tuple[list[Endpoint], list[Endpoint], str, str]:
     """Outputs and inputs for the panel, plus the label and glyph of the current output.
 
@@ -294,7 +324,7 @@ def build_endpoints(
             label=profiles.endpoint_label(record),
             volume=volume,
             muted=muted,
-            form=profiles.device_form(name, str(record.get("description") or ""), str(record.get("icon") or ""), kind),
+            form=profiles.record_form(record, kind, laptop),
             key=profiles.profile_key(name),
             active=(name == default_sink or (default_hidden and bool(volume_sink) and name == volume_sink))
             if kind == "sink" else name == default_source,
@@ -303,7 +333,7 @@ def build_endpoints(
             outputs.append(endpoint)
         else:
             inputs.append(endpoint)
-    label, form = profiles.describe(volume_sink, records, "sink")
+    label, form = profiles.describe(volume_sink, records, "sink", laptop)
     for endpoint in outputs:
         if endpoint.active:
             label, form = endpoint.label, endpoint.form
@@ -394,7 +424,7 @@ def snapshot() -> Snapshot:
         )
         serial_to_channel[serial] = channel.key
 
-    records = _plain_records(nodes)
+    records = _plain_records(nodes, _active_ports(objects))
     # Volumes live on the node info, which the plain record does not carry.
     # Stamp them before the list is built so a row can show its own level.
     for record in records:

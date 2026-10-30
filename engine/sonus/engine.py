@@ -10,6 +10,7 @@ Out:
   {"type": "state", ...}    one graph snapshot (0.7 s open, 2 s hidden)
   {"type": "update", ...}   update check results
   {"type": "notice", ...}   one-line messages for the status area
+  {"type": "output", ...}   the output device just changed: its label and form
 
 In: see Engine.handle().
 """
@@ -108,8 +109,8 @@ class Engine:
                 import os
                 os._exit(0)
 
-    def notice(self, text: str, error: bool = False) -> None:
-        self.emit({"type": "notice", "text": text, "error": error})
+    def notice(self, text: str, error: bool = False, form: str = "") -> None:
+        self.emit({"type": "notice", "text": text, "error": error, "form": form})
 
     def emit_config(self) -> None:
         with self._state_lock:
@@ -379,7 +380,8 @@ class Engine:
         self.emit_config()
         self.persist_later()
 
-    def _switch_profile(self, snap: pipewire.Snapshot, key: str, label: str) -> None:
+    def _switch_profile(self, snap: pipewire.Snapshot, key: str, label: str) -> bool:
+        """Make `key` the current device; True when its saved mix came back."""
         master = snap.channels.get("master")
         fallback = profiles.from_live(
             label,
@@ -394,11 +396,12 @@ class Engine:
         if apply:
             self._apply_profile(chosen, snap)
             # Says why the faders just moved.
-            self.notice(f"{label}: saved volume and EQ restored")
-            return
+            self.notice(f"{label}: saved volume and EQ restored", form=snap.output_form)
+            return True
         chosen.eqs = profiles.clone_eqs(self.eqs)
         self.profiles[key] = chosen
         self.persist_later()
+        return False
 
     def _capture_profile(self, snap: pipewire.Snapshot) -> None:
         profile = self.profiles.get(self.active_key)
@@ -437,12 +440,18 @@ class Engine:
                 self._apply_pending = False
             return
         if key != self.active_key:
+            # A change the user made or plugged in, not the device found at
+            # startup, gets the on-screen toast.
+            announce = self._profiles_started
             self._profiles_started = True
+            restored = False
             if self._skip_apply_once:
                 self._skip_apply_once = False
                 self._remember_without_apply(snap, key, label)
             else:
-                self._switch_profile(snap, key, label)
+                restored = self._switch_profile(snap, key, label)
+            if announce:
+                self.emit({"type": "output", "label": label, "form": snap.output_form, "restored": restored})
             return
         if not self._profiles_started:
             self._profiles_started = True

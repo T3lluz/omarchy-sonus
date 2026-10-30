@@ -182,35 +182,89 @@ def endpoint_label(record: dict) -> str:
     return "Unknown"
 
 
-def device_form(name: str, description: str, icon: str, kind: str) -> str:
-    """Coarse shape the panel uses to pick a glyph."""
-    blob = f"{name} {description} {icon}".lower()
-    if kind == "source":
-        if any(word in blob for word in ("headset", "headphone", "airpod", "earbud")):
-            return "headphones"
-        if "bluetooth" in blob or "bluez" in blob:
-            return "bluetooth"
-        if "webcam" in blob or "camera" in blob:
-            return "camera"
-        return "mic"
-    if any(word in blob for word in ("headphone", "headset", "earbud", "airpod", "earphone")):
+# Words that make a device in-ear rather than over-ear.
+_EARBUDS = ("airpod", "earbud", "buds", "earphone")
+# DMI chassis types of portable machines: laptop, notebook, sub notebook,
+# convertible, detachable.
+_PORTABLE_CHASSIS = {"8", "9", "10", "14", "31", "32"}
+_laptop: bool | None = None
+
+
+def is_laptop() -> bool:
+    """Whether the built-in speakers are a laptop's, read once."""
+    global _laptop
+    if _laptop is None:
+        try:
+            with open("/sys/class/dmi/id/chassis_type", encoding="ascii") as fh:
+                _laptop = fh.read().strip() in _PORTABLE_CHASSIS
+        except OSError:
+            _laptop = False
+    return _laptop
+
+
+def device_form(
+    name: str,
+    description: str,
+    icon: str,
+    kind: str,
+    form_factor: str = "",
+    bus: str = "",
+    port: str = "",
+    laptop: bool | None = None,
+) -> str:
+    """Coarse shape the panel uses to pick a glyph.
+
+    The active port decides first for a sound card, since one card is the
+    speakers or the headphones depending on what is plugged into the jack.
+    Bluetooth states its form factor; the rest is read from the names.
+    """
+    blob = f"{name} {description} {icon} {port}".lower()
+    factor = (form_factor or "").lower()
+    if any(word in blob for word in _EARBUDS):
+        return "earbuds"
+    if factor in ("headset", "hands-free", "handset") or "headset" in blob:
+        return "headset"
+    if factor == "headphone" or "headphone" in blob:
         return "headphones"
-    if "bluez" in blob or "bluetooth" in blob:
-        return "bluetooth"
+    bluetooth = bus == "bluetooth" or "bluez" in blob or "bluetooth" in blob
+    if kind == "source":
+        if factor == "webcam" or "webcam" in blob or "camera" in blob:
+            return "camera"
+        # A Bluetooth microphone is nearly always the one in a headset.
+        return "headset" if bluetooth else "mic"
+    if factor == "tv" or re.search(r"\btv\b", blob):
+        return "tv"
     if "hdmi" in blob or "displayport" in blob or "display" in blob:
         return "hdmi"
+    if bluetooth:
+        return "bluetooth"
+    internal = factor == "internal" or bus == "pci" or any(
+        word in blob for word in ("laptop", "speaker", "built-in", "internal"))
+    if internal and (is_laptop() if laptop is None else laptop):
+        return "laptop"
     return "speaker"
 
 
-def describe(name: str, records: list[dict], kind: str = "sink") -> tuple[str, str]:
+def describe(name: str, records: list[dict], kind: str = "sink", laptop: bool | None = None) -> tuple[str, str]:
     for record in records:
         if record.get("name") == name:
-            return endpoint_label(record), device_form(
-                name, str(record.get("description") or ""), str(record.get("icon") or ""), kind
-            )
+            return endpoint_label(record), record_form(record, kind, laptop)
     fallback = "Output" if kind == "sink" else "Input"
     form = "speaker" if kind == "sink" else "mic"
     return friendly_label(name) or fallback, form
+
+
+def record_form(record: dict, kind: str, laptop: bool | None = None) -> str:
+    return device_form(
+        str(record.get("name") or ""),
+        str(record.get("description") or ""),
+        str(record.get("icon") or ""),
+        kind,
+        form_factor=str(record.get("form_factor") or ""),
+        bus=str(record.get("bus") or ""),
+        port=str(record.get("port") or ""),
+        laptop=laptop,
+    )
 
 
 def is_hidden_output(name: str) -> bool:

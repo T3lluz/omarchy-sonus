@@ -1,7 +1,9 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.Pipewire
 import "ui/Eq.js" as Eq
+import "ui/Glyphs.js" as Glyphs
 
 // The plugin's always-on half. It runs the engine (bin/sonus-engine), which
 // owns the virtual channels and keeps every app routed whether the panel is
@@ -48,6 +50,8 @@ Scope {
   property bool manageGraph: true
   property string noticeText: ""
   property bool noticeError: false
+  // The device a notice is about, so its banner wears that device's icon.
+  property string noticeForm: ""
   property double noticeAt: 0
   property var outputs: []
   property var inputs: []
@@ -209,11 +213,35 @@ Scope {
     } else if (msg.type === "notice") {
       noticeText = msg.text || ""
       noticeError = msg.error === true
+      noticeForm = msg.form || ""
       noticeAt = Date.now()
       noticeTimer.interval = noticeError ? 9000 : 5000
       // A notice from while the panel was shut waits to be seen.
       if (opened) noticeTimer.restart()
+    } else if (msg.type === "output") {
+      outputForm = msg.form || outputForm
+      outputLabel = msg.label || outputLabel
+      announceOutput(msg.label || "", msg.form || "")
     }
+  }
+
+  // The device toast: Omarchy's own OSD, with the device's icon and name, so
+  // a switch from a keybinding, a cable or Bluetooth reads at a glance. An
+  // open panel shows the switch itself, so it gets no toast on top.
+  function announceOutput(label, form) {
+    if (opened || label === "" || !shell || typeof shell.summon !== "function") return
+    shell.summon("omarchy.osd", JSON.stringify({
+      icon: Glyphs.deviceGlyph(form),
+      message: label,
+      duration: 2000
+    }))
+  }
+
+  // Look again the moment the system output changes, so the toast and the
+  // device's mix follow a switch at once rather than at the next idle poll.
+  Connections {
+    target: Pipewire
+    function onDefaultAudioSinkChanged() { root.send({ cmd: "refresh" }) }
   }
 
   Timer {
@@ -225,6 +253,7 @@ Scope {
   function dismissNotice() {
     noticeTimer.stop()
     noticeText = ""
+    noticeForm = ""
   }
 
   // ---- commands ---------------------------------------------------------------
@@ -446,6 +475,7 @@ Scope {
         legacy: root.legacy,
         master: root.master ? Math.round(root.masterVolume * 100) : null,
         output: root.outputLabel,
+        outputForm: root.outputForm,
         profile: root.activeProfile,
         apps: root.appsModel.count,
         mixTarget: root.mixTarget,

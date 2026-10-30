@@ -4,7 +4,7 @@
   <p>A Sonar-style mixer for <b>PipeWire</b> that drops down from the Omarchy bar:<br/>
   system output and input, <b>Game, Chat, Media and Aux</b> channels, a saved mix per device, and a 10-band EQ.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v1.4.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.5.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-a58bff" />
     <img alt="PipeWire" src="https://img.shields.io/badge/PipeWire-filter--chain-a58bff" />
     <a href="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml/badge.svg" /></a>
@@ -18,6 +18,7 @@
 
 - **Output and input:** the system volume, mute, and the device list live in the panel. Choosing an output switches the system to it. The microphone has its own level, mute and a live meter.
 - **A mix per device:** AirPods keep one volume and equalizer, the laptop speakers keep another. The first time a device is used it starts from the mix you already have; after that, coming back restores it.
+- **See where the sound goes:** the device in use has its own icon (laptop, headphones, headset, AirPods and other earbuds, Bluetooth speaker, monitor, TV) at the top of the panel, and its row says which channels it EQs. Switching outputs, whether from a keybinding, a cable or Bluetooth, shows a toast with the device's icon and name. Scrolling on the bar icon shows the same icon in the volume toast.
 - **Channels:** Game, Chat, Media and Aux are real PipeWire sinks, each with its own volume and mute, all mixed into the selected output.
 - **Routing:** drag an app onto a channel, or pick one from its button. Routes are remembered and enforced whenever the app starts playing again, panel open or not. Drop an app on the Output section to unassign it.
 - **EQ per channel:** ten octave bands from 32 Hz to 16 kHz with a preamp, presets (Flat, Bass, Voice, Treble, Steps), a smooth curve through the faders, and a bypass switch. Changes apply to the running graph with no gap. The curve is saved with the output device.

@@ -28,6 +28,8 @@ OptionRow {
   fontFamily: host.fontFamily
   icon: Glyphs.deviceGlyph(device.form)
   title: device.label || "Unknown"
+  // Each output keeps its own volume and EQ; the one in use says so.
+  subtitle: section === "sink" && device.active ? host.profileLine : ""
   mark: !device.active ? "" : (!expandable ? Glyphs.check : (host.devicesOpen(section) ? Glyphs.chevronUp : Glyphs.chevronDown))
   height: implicitHeight
   onHasCursorChanged: if (hasCursor) host.ensureVisible(row)
