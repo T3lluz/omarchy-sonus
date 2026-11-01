@@ -4,60 +4,94 @@ import qs.Commons as Commons
 import qs.Ui
 import "Glyphs.js" as Glyphs
 
-// One app playing sound. Its category button opens a picker row; the name
-// line is also a grab handle: drag it onto a channel to assign the app.
-CursorSurface {
+// One app playing sound, inside the lane of the channel it plays into: a
+// chip with a grip that picks the app up, then its own fader and level on
+// the panel's grid. Drag the chip to another lane to move the app there, or
+// click it to pick a channel from a row of buttons.
+Item {
   id: row
 
   required property var host
-  required property var model
+  // { key, name, icon } from the service's appsIn().
+  required property var app
 
   readonly property var service: host.service
-  readonly property string key: model.key
-  readonly property string channel: service ? service.effectiveChannel(model.key, model.channel) : ""
-  readonly property real volume: service ? service.volumeOf(key) : 0
-  readonly property bool muted: service ? service.mutedOf(key) : false
+  readonly property string key: app.key
+  readonly property string channel: {
+    if (!service) return ""
+    service.appsVersion
+    var info = service.appInfo[key]
+    return service.effectiveChannel(key, info ? info.channel : "")
+  }
+  readonly property bool muted: !!service && service.mutedOf(key)
+  readonly property real level: fader.dragging ? fader.liveValue : (service ? service.volumeOf(key) : 0)
   readonly property bool picking: host.menuKey === key
+  readonly property bool hasCursor: host.cursorActive && host.cursorKey === "app:" + key
+  readonly property bool lifted: host.dragKey === key
 
-  hasCursor: host.cursorActive && host.cursorKey === "app:" + key
-  current: picking
-  foreground: host.fg
-  fill: host.hoverFill
-  currentFill: host.selectedFill
-  opacity: host.dragKey === key ? 0.45 : 1
-  implicitHeight: column.implicitHeight + Style.spacing.xl
+  width: parent ? parent.width : 0
+  implicitHeight: picker.visible ? picker.y + picker.height : line.height
   height: implicitHeight
   onHasCursorChanged: if (hasCursor) host.ensureVisible(row)
 
   HoverHandler {
-    onHoveredChanged: if (hovered && host.dragKey === "") host.setCursor("app:" + row.key)
+    onHoveredChanged: if (hovered && row.host.dragKey === "") row.host.pointAt("app:" + row.key)
   }
 
-  Column {
-    id: column
-    anchors.left: parent.left
-    anchors.right: parent.right
-    anchors.verticalCenter: parent.verticalCenter
-    anchors.leftMargin: Style.space(8)
-    anchors.rightMargin: Style.space(8)
-    spacing: Style.space(2)
+  WheelHandler {
+    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+    onWheel: function(event) { row.host.wheelVolume(row.key, event.angleDelta.y) }
+  }
 
-    Item {
-      width: parent.width
-      height: Math.max(Style.space(24), chooser.implicitHeight)
+  Item {
+    id: line
+    width: parent.width
+    height: Math.max(chip.height, fader.height)
+
+    // The chip: grip, icon and name, lit under the pointer so it reads as
+    // something to pick up.
+    CursorSurface {
+      id: chip
+      x: row.host.chipX
+      width: row.host.chipWidth
+      height: Math.max(row.host.chipH, chipName.implicitHeight + Style.space(8))
+      anchors.verticalCenter: parent.verticalCenter
+      bordered: true
+      hasCursor: handle.containsMouse || row.hasCursor
+      current: row.picking
+      foreground: row.host.fg
+      opacity: row.lifted ? 0.35 : 1
+
+      // Three rows of two dots: the usual sign for "drag me".
+      Grid {
+        id: grip
+        x: Style.space(6)
+        anchors.verticalCenter: parent.verticalCenter
+        columns: 2
+        spacing: Style.space(2)
+
+        Repeater {
+          model: 6
+          Rectangle {
+            width: Math.max(2, Style.space(2))
+            height: width
+            radius: width / 2
+            color: handle.containsMouse || row.hasCursor ? row.host.fg : row.host.dim
+          }
+        }
+      }
 
       Item {
         id: icon
-        width: Style.space(22)
-        height: Style.space(18)
+        x: grip.x + grip.width + Style.space(6)
         anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(16)
+        height: width
 
         Image {
-          anchors.centerIn: parent
-          width: Style.space(18)
-          height: width
+          anchors.fill: parent
           visible: status === Image.Ready
-          source: row.model.icon || ""
+          source: row.app.icon || ""
           sourceSize.width: width * 2
           sourceSize.height: height * 2
           smooth: true
@@ -68,135 +102,102 @@ CursorSurface {
 
         Text {
           anchors.centerIn: parent
-          visible: !row.model.icon
+          visible: !row.app.icon
           text: Glyphs.app
           color: row.host.fg
           font.family: row.host.fontFamily
-          font.pixelSize: Style.font.title
+          font.pixelSize: parent.height
         }
       }
 
       Text {
-        id: name
+        id: chipName
         anchors.left: icon.right
-        anchors.leftMargin: Style.space(10)
-        anchors.right: chooser.left
-        anchors.rightMargin: Style.space(8)
+        anchors.leftMargin: Style.space(6)
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(6)
         anchors.verticalCenter: parent.verticalCenter
+        wrapMode: Text.Wrap
         textFormat: Text.PlainText
-        elide: Text.ElideRight
-        text: row.model.name
-        color: row.host.fg
-        opacity: row.muted ? 0.5 : 1
+        text: row.app.name || "Unknown"
+        color: row.muted ? row.host.dim : row.host.fg
         font.family: row.host.fontFamily
         font.pixelSize: Style.font.body
       }
 
-      // Grab handle over the icon and name.
-      MouseArea {
-        id: grabArea
-        anchors.left: parent.left
-        anchors.right: chooser.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        cursorShape: grabbing ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-        property bool grabbing: false
-        property real pressX: 0
-        property real pressY: 0
-        preventStealing: true
-        onPressed: function(event) {
-          pressX = event.x
-          pressY = event.y
-          grabbing = false
-        }
-        onPositionChanged: function(event) {
-          if (!pressed) return
-          if (!grabbing && Math.abs(event.x - pressX) + Math.abs(event.y - pressY) > 8) grabbing = true
-          if (grabbing) row.host.dragMove(row.key, grabArea, event.x, event.y)
-        }
-        onReleased: function(event) {
-          if (grabbing) row.host.dragRelease(row.key, grabArea, event.x, event.y)
-          else row.host.toggleMenu(row.key)
-          grabbing = false
-        }
-        onCanceled: {
-          grabbing = false
-          row.host.endDrag()
-        }
+      DragHandle {
+        id: handle
+        anchors.fill: parent
+        host: row.host
+        appKey: row.key
+        onTapped: row.host.toggleMenu(row.key)
       }
 
-      Button {
-        id: chooser
-        anchors.right: pct.left
-        anchors.rightMargin: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        text: row.channel ? row.host.channelTitle(row.channel) : "Output"
-        iconText: row.channel ? Glyphs.channel(row.channel) : Glyphs.speaker
-        tooltipText: "Send to a channel (1-4, 0 for output)"
-        selected: row.picking
-        bordered: true
-        foreground: row.host.fg
+      PanelToolTip {
+        visible: handle.containsMouse && !handle.grabbing && row.host.dragKey === "" && !row.picking
+        text: "Drag to another channel, or click to pick one"
         fontFamily: row.host.fontFamily
-        fontSize: Style.font.caption
-        iconSize: Style.font.bodySmall
-        verticalPadding: Style.space(2)
-        horizontalPadding: Style.space(7)
-        onClicked: row.host.toggleMenu(row.key)
-      }
-
-      Text {
-        id: pct
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        width: Style.space(34)
-        horizontalAlignment: Text.AlignRight
-        textFormat: Text.PlainText
-        text: row.muted ? "muted" : Math.round((slider.dragging ? slider.liveValue : row.volume) * 100) + "%"
-        color: row.host.dim
-        font.family: row.host.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
-
-        MouseArea {
-          anchors.fill: parent
-          anchors.margins: -Style.space(3)
-          cursorShape: Qt.PointingHandCursor
-          onClicked: row.service.setMute(row.key, !row.muted)
-        }
       }
     }
 
-    // Starts under the name, so the icon column stays a clean edge.
     PanelSlider {
-      id: slider
+      id: fader
       bar: row.host.bar
-      x: name.x
-      width: parent.width - x
+      x: row.host.faderX
+      width: row.host.faderWidth(line.width)
+      anchors.verticalCenter: parent.verticalCenter
       minimum: 0
       maximum: 1
-      step: 0.01
-      value: row.muted ? 0 : row.volume
-      opacity: row.muted ? 0.5 : 1
+      step: 0.05
+      value: row.service ? row.service.volumeOf(row.key) : 0
+      opacity: row.muted ? 0.4 : 1
       onMoved: function(v) {
         if (row.muted) row.service.setMute(row.key, false)
         row.service.setVolume(row.key, v)
       }
       onRightClicked: row.service.setMute(row.key, !row.muted)
+    }
 
-      WheelHandler {
-        acceptedDevices: PointerDevice.Mouse
-        onWheel: function(event) { row.host.wheelVolume(row.key, event.angleDelta.y) }
+    Reading {
+      anchors.right: parent.right
+      anchors.rightMargin: row.host.rowPad
+      anchors.verticalCenter: parent.verticalCenter
+      value: row.level
+      muted: row.muted
+      size: row.host.readingSize
+      color: row.host.fg
+      dim: row.host.dim
+      fontFamily: row.host.fontFamily
+
+      MouseArea {
+        id: muteMouse
+        anchors.fill: parent
+        anchors.margins: -Style.space(3)
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: row.service.setMute(row.key, !row.muted)
+      }
+
+      PanelToolTip {
+        visible: muteMouse.containsMouse
+        text: (row.muted ? "Unmute " : "Mute ") + (row.app.name || "this app") + " (m)"
+        fontFamily: row.host.fontFamily
       }
     }
+  }
 
-    ButtonGroup {
-      visible: row.picking
-      options: row.host.routeOptions
-      value: row.channel
-      foreground: row.host.fg
-      fontFamily: row.host.fontFamily
-      fontSize: Style.font.caption
-      onChanged: function(value) { row.host.assign(row.key, value) }
-    }
+  // The click-instead-of-drag way: every channel as a button.
+  ButtonGroup {
+    id: picker
+    visible: row.picking
+    x: row.host.chipX
+    y: line.height + Style.space(4)
+    width: parent.width - x - row.host.rowPad
+    options: row.host.routeOptions
+    value: row.channel
+    foreground: row.host.fg
+    fontFamily: row.host.fontFamily
+    fontSize: Style.font.caption
+    onChanged: function(value) { row.host.assign(row.key, value) }
   }
 }

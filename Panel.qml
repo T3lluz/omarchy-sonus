@@ -9,10 +9,11 @@ import "ui/Audio.js" as Audio
 import "ui/Glyphs.js" as Glyphs
 import "ui/Eq.js" as Eq
 
-// Sonus in the bar. The mark drops the panel: system output and input, the
-// four channels (each with its EQ) and every app playing sound. Picking an
-// output also brings back that device's volume and equalizer. All state
-// lives in the service; this only draws it.
+// Sonus in the bar. The mark drops the panel: the output and input in use,
+// then the four channels as lanes holding the apps that play into them.
+// Dragging an app's chip to another lane moves it there. Picking an output
+// also brings back that device's volume and equalizer. All state lives in
+// the service; this only draws it.
 Panel {
   id: root
   moduleName: "io.github.t3lluz.sonus"
@@ -22,10 +23,28 @@ Panel {
     ? bar.shell.serviceFor(moduleName) : null
 
   readonly property color fg: bar ? bar.foreground : Commons.Color.foreground
-  readonly property color dim: Qt.darker(fg, 1.4)
+  readonly property color dim: Qt.darker(fg, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property color hoverFill: Style.hoverFillFor(fg, Commons.Color.accent)
-  readonly property color selectedFill: Style.selectedFillFor(fg, Commons.Color.accent)
+
+  // One grid for every row: icon, name, fader, level. The device, channel
+  // and app faders all start and end at the same x, and every level lines
+  // up on the right, so the panel reads down its columns. An app's chip
+  // starts under its channel's name, inside the channel.
+  readonly property real rowPad: Style.space(8)
+  readonly property real iconW: Style.space(24)
+  readonly property real iconH: Style.space(18)
+  readonly property real nameX: rowPad + iconW + Style.space(10)
+  readonly property real nameW: Style.space(136)
+  readonly property real faderX: nameX + nameW + Style.space(10)
+  readonly property real readingW: Style.space(46)
+  readonly property real readingSize: Style.font.heading
+  readonly property real chipX: nameX - Style.space(6)
+  readonly property real chipWidth: faderX - Style.space(10) - chipX
+  readonly property real chipH: Style.space(28)
+
+  function faderWidth(rowWidth) { return rowWidth - rowPad - readingW - Style.space(10) - faderX }
+
+  readonly property int appCount: service ? service.appsModel.count : 0
 
   readonly property var categories: [
     { key: "game", title: "Game" },
@@ -38,16 +57,12 @@ Panel {
     { value: "chat", label: "Chat" },
     { value: "media", label: "Media" },
     { value: "aux", label: "Aux" },
-    { value: "", label: "Output" }
+    { value: "", label: "No channel" }
   ]
 
   function channelTitle(key) {
     for (var i = 0; i < categories.length; i++) if (categories[i].key === key) return categories[i].title
-    return "Output"
-  }
-
-  function levelText(level) {
-    return level.muted ? "muted" : Math.round(level.shownVolume * 100) + "%"
+    return "No channel"
   }
 
   // ---- banners ----------------------------------------------------------------
@@ -104,14 +119,6 @@ Panel {
     return st.enabled && !Eq.isFlat(st)
   }
 
-  // What the device in use carries of its own mix, under its row: the
-  // channels whose EQ shapes the sound.
-  readonly property string profileLine: {
-    var on = []
-    for (var i = 0; i < categories.length; i++) if (eqActive(categories[i].key)) on.push(categories[i].title)
-    return "Own mix · " + (on.length ? "EQ on " + on.join(", ") : "flat EQ")
-  }
-
   function openEq(key) {
     if (key === "master" || !service) return
     var entrance = view !== "eq"
@@ -142,8 +149,8 @@ Panel {
 
   // ---- device lists -------------------------------------------------------------
 
-  // Collapsed, a device list shows only the device in use, so the channels
-  // and apps stay in view. Clicking that row opens the rest.
+  // The device in use stands alone, so the channels and apps stay in view.
+  // Its name opens the others.
   property bool outputsOpen: false
   property bool inputsOpen: false
 
@@ -159,17 +166,17 @@ Panel {
     else inputsOpen = open
   }
 
-  function deviceShown(section, device) {
-    if (!device || device.active || devicesOpen(section)) return true
-    var list = devices(section)
-    for (var i = 0; i < list.length; i++) if (list[i] && list[i].active) return false
-    return true
+  function toggleDevices(section) {
+    setDevicesOpen(section, !devicesOpen(section))
+    if (cursorActive) setCursor(section === "sink" ? "vol:out" : "vol:in")
   }
 
   // ---- cursor -----------------------------------------------------------------
 
   // One cursor for keyboard and mouse: "vol:out", "vol:in", "sink:<name>",
-  // "src:<name>", "ch:<key>" or "app:<key>".
+  // "src:<name>", "ch:<key>" or "app:<key>". The pointer moves it without
+  // lighting anything, so the panel stays still under the mouse; the
+  // keyboard lights it.
   property bool cursorActive: false
   property string cursorKey: ""
   property string menuKey: ""
@@ -177,19 +184,23 @@ Panel {
   readonly property var cursorKeys: {
     var keys = ["vol:out"]
     if (service) {
-      var outs = service.outputs || []
-      for (var i = 0; i < outs.length; i++) if (outs[i] && outs[i].name && deviceShown("sink", outs[i])) keys.push("sink:" + outs[i].name)
-      if (service.channels && service.channels.input) {
+      var outs = outputsOpen ? (service.outputs || []) : []
+      for (var i = 0; i < outs.length; i++) if (outs[i] && outs[i].name && !outs[i].active) keys.push("sink:" + outs[i].name)
+      if (hasInput) {
         keys.push("vol:in")
-        var ins = service.inputs || []
-        for (var n = 0; n < ins.length; n++) if (ins[n] && ins[n].name && deviceShown("src", ins[n])) keys.push("src:" + ins[n].name)
+        var ins = inputsOpen ? (service.inputs || []) : []
+        for (var n = 0; n < ins.length; n++) if (ins[n] && ins[n].name && !ins[n].active) keys.push("src:" + ins[n].name)
       }
       service.appsVersion
+      service.pendingRoutes
     }
-    for (var c = 0; c < categories.length; c++) keys.push("ch:" + categories[c].key)
-    if (service) {
-      for (var j = 0; j < service.appsModel.count; j++) keys.push("app:" + service.appsModel.get(j).key)
+    for (var c = 0; c < categories.length; c++) {
+      keys.push("ch:" + categories[c].key)
+      var inLane = service ? service.appsIn(categories[c].key) : []
+      for (var j = 0; j < inLane.length; j++) keys.push("app:" + inLane[j].key)
     }
+    var direct = service ? service.appsIn("") : []
+    for (var d = 0; d < direct.length; d++) keys.push("app:" + direct[d].key)
     return keys
   }
 
@@ -201,6 +212,23 @@ Panel {
   function setCursor(key) {
     cursorActive = true
     cursorKey = key
+  }
+
+  // Rows report what the pointer is over. After a key press that is ignored
+  // until the pointer really moves, or a row sliding under a resting pointer
+  // (a list opening, a picker) would steal the keyboard's place.
+  property bool pointerMoved: false
+  property point pointerAt: Qt.point(-1, -1)
+
+  function pointAt(key) {
+    if (cursorActive && !pointerMoved) return
+    cursorActive = false
+    cursorKey = key
+  }
+
+  function trackPointer(p) {
+    if (Math.abs(p.x - pointerAt.x) + Math.abs(p.y - pointerAt.y) > 2) pointerMoved = true
+    pointerAt = p
   }
 
   function moveCursor(delta) {
@@ -241,17 +269,12 @@ Panel {
     }
   }
 
-  // The device in use opens and closes its list; any other is picked.
   function selectDevice(section, device) {
-    if (!service || !device || !device.name) return
-    setCursor(section + ":" + device.name)
-    if (device.active) {
-      if (devices(section).length > 1) setDevicesOpen(section, !devicesOpen(section))
-      return
-    }
+    if (!service || !device || !device.name || device.active) return
     if (section === "sink") service.selectOutput(device.id, device.name)
     else service.selectInput(device.id, device.name)
     setDevicesOpen(section, false)
+    if (cursorActive) setCursor(section === "sink" ? "vol:out" : "vol:in")
   }
 
   function showVolumeOsd(volume) {
@@ -303,14 +326,14 @@ Panel {
   property real dragY: 0
 
   function targetAt(p) {
-    var rows = [outputSection, gameRow, chatRow, mediaRow, auxRow]
+    var rows = [gameLane, chatLane, mediaLane, auxLane, directLane]
     for (var j = 0; j < rows.length; j++) {
       var r = rows[j]
       if (!r) continue
       var q = r.mapToItem(stage, 0, 0)
       var w = r.width > 0 ? r.width : r.implicitWidth
       var h = r.height > 0 ? r.height : r.implicitHeight
-      if (p.x >= q.x && p.x <= q.x + w && p.y >= q.y && p.y <= q.y + h) return r.key
+      if (r.visible && p.x >= q.x && p.x <= q.x + w && p.y >= q.y && p.y <= q.y + h) return r.dropKey
     }
     return ""
   }
@@ -439,13 +462,14 @@ Panel {
     contentHeight: panel.fittedContentHeight(
       root.view === "eq" ? eqView.implicitHeight
         : root.view === "settings" ? settingsView.implicitHeight : mixerColumn.implicitHeight,
-      Style.space(660))
+      Style.space(780))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
 
       onMoveRequested: function(dx, dy) {
+        root.pointerMoved = false
         if (root.view === "eq") { eqView.handleMove(dx, dy); return }
         if (root.view !== "mixer") return
         if (!root.cursorActive) {
@@ -456,12 +480,13 @@ Panel {
         else if (dx !== 0 && root.service && root.volumeKey()) root.service.adjustVolume(root.volumeKey(), dx * 0.05)
       }
       onActivateRequested: {
+        root.pointerMoved = false
         if (root.view !== "mixer" || !root.cursorActive || !root.service) return
         var key = root.cursorKey
         if (key.indexOf("sink:") === 0) root.selectNamed("sink", root.cursorTarget())
         else if (key.indexOf("src:") === 0) root.selectNamed("src", root.cursorTarget())
-        else if (key === "vol:out") root.service.setMute("master", !root.service.mutedOf("master"))
-        else if (key === "vol:in") root.service.setMute("input", !root.service.mutedOf("input"))
+        else if (key === "vol:out") root.toggleDevices("sink")
+        else if (key === "vol:in") root.toggleDevices("src")
         else if (key.indexOf("app:") === 0) root.toggleMenu(root.cursorTarget())
         else if (key.indexOf("ch:") === 0) root.openEq(root.cursorTarget())
       }
@@ -472,6 +497,7 @@ Panel {
       }
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
+        root.pointerMoved = false
         if (root.view === "eq") {
           if (t === "e") root.setView("mixer")
           else eqView.handleText(t.toLowerCase())
@@ -491,6 +517,10 @@ Panel {
       Item {
         id: stage
         anchors.fill: parent
+
+        HoverHandler {
+          onPointChanged: root.trackPointer(point.scenePosition)
+        }
 
         // ---- mixer ----------------------------------------------------------
         Flickable {
@@ -514,20 +544,22 @@ Panel {
               meta: {
                 var s = root.service
                 if (!s || !s.engineUp) return "Starting"
-                var name = s.outputLabel || (s.master ? s.master.description : "Output")
-                return name + " · " + Audio.volumeName(outputLevel.shownVolume, s.masterMuted)
+                return Audio.appsLine(root.appCount) + " · " + Audio.volumeName(outputGroup.level, s.masterMuted)
               }
               foreground: root.fg
               fontFamily: root.fontFamily
-              // The device in use, as in Omarchy's Audio panel: laptop,
-              // headphones, AirPods. Dimmed while muted.
               iconComponent: Component {
-                Glyph {
-                  size: Style.font.display
-                  icon: Glyphs.deviceGlyph(root.service ? root.service.outputForm : "")
-                  color: root.fg
-                  fontFamily: root.fontFamily
-                  opacity: root.service && root.service.masterMuted ? 0.5 : 1
+                Item {
+                  implicitWidth: Style.font.display
+                  implicitHeight: Style.font.display
+
+                  SonusMark {
+                    anchors.centerIn: parent
+                    width: Math.round(Style.font.display / 2) * 2
+                    height: width
+                    color: root.fg
+                    muted: !!(root.service && root.service.masterMuted)
+                  }
                 }
               }
               trailingControl: Component {
@@ -563,121 +595,90 @@ Panel {
               }
             }
 
-            // Also the drop target that takes an app back to the plain output.
-            Section {
-              id: outputSection
+            Column {
               width: parent.width
-              key: "master"
-              icon: Glyphs.speaker
-              title: "OUTPUT"
-              meta: root.levelText(outputLevel)
-              hot: root.dragKey !== "" && root.dropTarget === "master"
-              foreground: root.fg
-              fontFamily: root.fontFamily
 
-              LevelRow {
-                id: outputLevel
+              DeviceGroup {
+                id: outputGroup
                 host: root
+                section: "sink"
                 key: "master"
                 cursor: "vol:out"
-                glyph: Glyphs.levelIcon(muted, shownVolume)
+                role: "Output"
               }
 
-              Repeater {
-                model: root.service ? root.service.outputs : []
-                DeviceRow {
-                  width: parent.width
-                  host: root
-                  section: "sink"
-                }
-              }
-
-              Caption {
-                visible: !root.service || !root.service.outputs || root.service.outputs.length === 0
-                width: parent.width
-                leftPadding: Style.space(8)
-                text: "No output devices"
-                foreground: root.fg
-                fontFamily: root.fontFamily
-              }
-            }
-
-            Section {
-              width: parent.width
-              visible: root.hasInput || (!!root.service && !!root.service.inputs && root.service.inputs.length > 0)
-              icon: Glyphs.microphone
-              title: "INPUT"
-              meta: root.hasInput ? root.levelText(inputLevel) : ""
-              foreground: root.fg
-              fontFamily: root.fontFamily
-
-              LevelRow {
-                id: inputLevel
+              DeviceGroup {
+                id: inputGroup
                 visible: root.hasInput
                 host: root
+                section: "src"
                 key: "input"
                 cursor: "vol:in"
-                glyph: muted ? Glyphs.microphoneOff : Glyphs.microphone
+                role: "Input"
                 metered: true
                 peak: inputPeakMonitor.peak
               }
+            }
 
-              Repeater {
-                model: root.service ? root.service.inputs : []
-                DeviceRow {
-                  width: parent.width
-                  host: root
-                  section: "src"
-                }
+            PanelSeparator { foreground: root.fg }
+
+            // Named the way Batteries names a group: bold on the left, what
+            // to do with it dim on the right.
+            Item {
+              readonly property bool channelsOn: !!(root.service && root.service.channels && root.service.channels.game)
+              width: parent.width
+              height: Math.max(channelsName.implicitHeight, channelsHint.implicitHeight)
+
+              Text {
+                id: channelsName
+                x: root.rowPad
+                textFormat: Text.PlainText
+                text: "Channels"
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+              }
+
+              Text {
+                id: channelsHint
+                anchors.right: parent.right
+                anchors.rightMargin: root.rowPad
+                anchors.baseline: channelsName.baseline
+                width: parent.width - channelsName.implicitWidth - root.rowPad * 2 - Style.space(16)
+                horizontalAlignment: Text.AlignRight
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                text: !parent.channelsOn ? "Switched off in settings"
+                  : root.dragKey !== "" ? "Drop it on a channel"
+                  : root.appCount > 0 ? "Drag apps between channels"
+                  : "Apps show up here while they play"
+                color: root.dragKey !== "" ? root.fg : root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
               }
             }
 
-            Section {
+            Column {
               width: parent.width
-              icon: Glyphs.sliders
-              title: "CHANNELS"
-              foreground: root.fg
-              fontFamily: root.fontFamily
+              spacing: Style.space(6)
 
-              Grid {
-                id: channelGrid
-                width: parent.width
-                columns: 2
-                spacing: Style.space(8)
+              ChannelLane { id: gameLane; host: root; key: "game"; title: "Game" }
+              PanelSeparator { foreground: root.fg; strength: 0.06 }
+              ChannelLane { id: chatLane; host: root; key: "chat"; title: "Chat" }
+              PanelSeparator { foreground: root.fg; strength: 0.06 }
+              ChannelLane { id: mediaLane; host: root; key: "media"; title: "Media" }
+              PanelSeparator { foreground: root.fg; strength: 0.06 }
+              ChannelLane { id: auxLane; host: root; key: "aux"; title: "Aux" }
+              PanelSeparator { visible: directLane.visible; foreground: root.fg; strength: 0.06 }
 
-                readonly property real cell: (width - spacing) / 2
-
-                ChannelRow { id: gameRow; host: root; key: "game"; title: "Game"; width: channelGrid.cell }
-                ChannelRow { id: chatRow; host: root; key: "chat"; title: "Chat"; width: channelGrid.cell }
-                ChannelRow { id: mediaRow; host: root; key: "media"; title: "Media"; width: channelGrid.cell }
-                ChannelRow { id: auxRow; host: root; key: "aux"; title: "Aux"; width: channelGrid.cell }
-              }
-            }
-
-            Section {
-              width: parent.width
-              icon: Glyphs.apps
-              title: "APPS"
-              meta: root.service && root.service.appsModel.count > 0 ? "drag onto a channel" : ""
-              foreground: root.fg
-              fontFamily: root.fontFamily
-
-              Caption {
-                visible: !root.service || root.service.appsModel.count === 0
-                width: parent.width
-                leftPadding: Style.space(8)
-                text: "Apps show up here while they play."
-                foreground: root.fg
-                fontFamily: root.fontFamily
-              }
-
-              Repeater {
-                model: root.service ? root.service.appsModel : null
-
-                AppRow {
-                  host: root
-                  width: parent.width
-                }
+              // Apps that skip the channels; while dragging, the way to send
+              // one there.
+              ChannelLane {
+                id: directLane
+                visible: apps.length > 0 || root.dragKey !== ""
+                host: root
+                title: "No channel"
               }
             }
           }
@@ -698,22 +699,39 @@ Panel {
           visible: root.view === "settings"
         }
 
-        // Chip following the pointer while an app is dragged.
-        Rectangle {
+        // The chip in the air, following the pointer: the same grip, icon
+        // and name as in its lane, and where it will land.
+        BorderSurface {
           visible: root.dragKey !== ""
-          x: Math.min(root.dragX + Style.space(12), stage.width - width)
+          x: Math.max(0, Math.min(root.dragX - Style.space(14), stage.width - width))
           y: root.dragY - height / 2
-          width: ghostRow.implicitWidth + Style.space(18)
-          height: Style.space(28)
-          radius: Style.cornerRadius > 0 ? height / 2 : 0
+          width: ghostRow.implicitWidth + Style.space(20)
+          height: root.chipH
+          radius: Style.cornerRadius
           color: Commons.Color.popups.background
-          border.width: Math.max(1, Style.space(1))
-          border.color: root.dropTarget !== "" ? Commons.Color.accent : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.3)
+          borderSpec: Border.controlSpec(root.dropTarget !== "" ? "selected" : "hover-cursor", root.fg, Commons.Color.accent)
 
           Row {
             id: ghostRow
-            anchors.centerIn: parent
+            x: Style.space(6)
+            anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(6)
+
+            Grid {
+              anchors.verticalCenter: parent.verticalCenter
+              columns: 2
+              spacing: Style.space(2)
+
+              Repeater {
+                model: 6
+                Rectangle {
+                  width: Math.max(2, Style.space(2))
+                  height: width
+                  radius: width / 2
+                  color: root.fg
+                }
+              }
+            }
 
             Image {
               anchors.verticalCenter: parent.verticalCenter
@@ -727,18 +745,25 @@ Panel {
 
             Text {
               anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
               text: {
                 if (root.dragKey === "" || !root.service) return ""
                 var info = root.service.appInfo[root.dragKey]
-                var name = info ? info.name : root.dragKey
-                if (root.dropTarget === "master") return name + "  →  Output"
-                if (root.dropTarget !== "") return name + "  →  " + root.channelTitle(root.dropTarget)
-                return name
+                return info ? info.name : root.dragKey
               }
               color: root.fg
               font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
+              font.pixelSize: Style.font.body
+            }
+
+            Text {
+              visible: root.dropTarget !== ""
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: "to " + root.channelTitle(root.dropTarget === "master" ? "" : root.dropTarget)
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
             }
           }
         }
