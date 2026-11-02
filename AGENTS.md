@@ -4,7 +4,7 @@ How Sonus is put together, for anyone (or any agent) changing it. The user-facin
 
 ## Layout
 
-- `Service.qml`: always loaded. Runs `bin/sonus-engine` and talks JSON lines with it; mirrors its state for the panel; owns the `sonus` IPC target.
+- `Service.qml`: always loaded. Runs `bin/sonus-engine` and talks JSON lines with it; mirrors its state for the panel; owns the `sonus` IPC target; keeps the Ctrl+Alt+V Hyprland bind in `~/.config/hypr/bindings.lua` via `ui/Shortcut.js`.
 - `Panel.qml`, `ui/`: the bar entry and panel, once per monitor, all reading the one service. Every row sits on one grid set in `Panel.qml` (icon, name, fader, level), so faders and levels line up down the panel. `DeviceGroup.qml` is the output or input row, `ChannelLane.qml` a channel with its apps inside, `AppRow.qml` an app's chip and fader; `DragHandle.qml` picks an app up. `ui/Eq.js` is the panel's copy of the EQ model, `ui/Audio.js` the panel's words and which drawing a device gets. `ui/` also holds the panel kit (below).
 - `ui/Drawings.js`, `ui/Drawing.qml`, `ui/Art.qml`, `ui/AirPodsIcon.qml`: the device and channel drawings, solid with fine details cut out, in Batteries' style (the laptop, speaker, headphones and gamepad are Batteries' own). `scripts/draw-glyphs.py` builds them from plain shapes and regenerates `Drawings.js`; check new ones on the sheet it writes to `/tmp/sonus-drawings.svg`.
 - `engine/sonus/`: the engine (Python, stdlib only). `graph.py` renders and runs the filter-chain graph as `sonus-graph.service`; `pipewire.py` reads and moves streams; `eq.py` is the EQ model; `profiles.py` is the per-output-device volume and EQ; `config.py` the settings in `~/.config/sonusdeck/settings.json`, shared with the Sonus desktop app.
@@ -15,11 +15,12 @@ How Sonus is put together, for anyone (or any agent) changing it. The user-facin
 ```bash
 node tests/eq.test.js
 node tests/audio.test.js
+node tests/shortcut.test.js
 python3 -B -m unittest discover tests
 omarchy-shell sonus status | jq
 ```
 
-`ui/Eq.js` and `engine/sonus/eq.py` must agree on the bands; `tests/eq.test.js` checks it.
+`ui/Eq.js` and `engine/sonus/eq.py` must agree on the bands; `tests/eq.test.js` checks it. `ui/Shortcut.js` owns the Ctrl+Alt+V block; `tests/shortcut.test.js` checks the unbind-before-bind shape.
 
 Sonus keeps its own settings file rather than `shell.json`, so the `WidgetSettings.qml` rule below does not apply to it; the rest does.
 

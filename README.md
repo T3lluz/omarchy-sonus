@@ -4,7 +4,7 @@
   <p>A Sonar-style mixer for <b>PipeWire</b> that drops down from the Omarchy bar:<br/>
   system output and input, <b>Game, Chat, Media and Aux</b> channels, a saved mix per device, and a 10-band EQ.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v1.6.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.6.1-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-a58bff" />
     <img alt="PipeWire" src="https://img.shields.io/badge/PipeWire-filter--chain-a58bff" />
     <a href="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml/badge.svg" /></a>
@@ -36,16 +36,13 @@ omarchy plugin add https://github.com/T3lluz/omarchy-sonus.git --enable
 
 Needs PipeWire with `pipewire-pulse` (Omarchy's default): `pw-dump`, `pw-cli`, `wpctl` and `pactl`. The engine is Python 3, standard library only.
 
-Bind a hotkey in `~/.config/hypr/bindings.lua`:
-
-```lua
-o.bind("CTRL + ALT + V", "Sonus", "omarchy-shell sonus toggle")
-```
+**Ctrl+Alt+V** opens the panel. Sonus writes that bind into `~/.config/hypr/bindings.lua` itself (and unbinds anything else on the same chord first), so it wins on a fresh install and after another tool reclaims the keys.
 
 ## Use
 
 | Input | Action |
 |---|---|
+| `Ctrl+Alt+V` | Open / close the panel |
 | Click the bar icon | Open the panel |
 | Scroll / middle-click the icon | Output volume / mute |
 | Click the output's or input's name | Show the other devices |

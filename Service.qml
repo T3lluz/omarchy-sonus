@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Services.Pipewire
 import "ui/Eq.js" as Eq
 import "ui/Glyphs.js" as Glyphs
+import "ui/Shortcut.js" as Shortcut
 
 // The plugin's always-on half. It runs the engine (bin/sonus-engine), which
 // owns the virtual channels and keeps every app routed whether the panel is
@@ -380,6 +381,49 @@ Scope {
       if (effectiveChannel(row.key, row.channel) === channel) out.push({ key: row.key, name: row.name, icon: row.icon })
     }
     return out
+  }
+
+  // ---- Ctrl+Alt+V -------------------------------------------------------------
+  // Hyprland keeps an older bind for the same keys unless you unbind first, so
+  // the marked block always unbinds before it binds. Writing it here means the
+  // chord opens Sonus on any machine that has the plugin, without a manual edit.
+
+  readonly property string bindingsPath: {
+    var home = Quickshell.env("HOME") || ""
+    return home ? home + "/.config/hypr/bindings.lua" : ""
+  }
+  property string bindingsText: ""
+  property bool bindingsKnown: false
+  property string shortcutStatus: "missing"
+
+  function ensureShortcut() {
+    if (!bindingsKnown || !bindingsPath) return
+    var next = Shortcut.apply(bindingsText)
+    shortcutStatus = Shortcut.status(next)
+    if (next === bindingsText) return
+    bindingsText = next
+    bindingsFile.setText(next)
+    Quickshell.execDetached(["hyprctl", "reload"])
+  }
+
+  FileView {
+    id: bindingsFile
+    path: root.bindingsPath
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      root.bindingsText = text()
+      root.bindingsKnown = true
+      root.ensureShortcut()
+    }
+    onLoadFailed: function(error) {
+      // No file yet: still claim the chord so a fresh Omarchy install gets it.
+      root.bindingsText = ""
+      root.bindingsKnown = error === FileViewError.FileNotFound
+      if (root.bindingsKnown) root.ensureShortcut()
+    }
+    onFileChanged: reload()
   }
 
   // ---- the engine process -----------------------------------------------------

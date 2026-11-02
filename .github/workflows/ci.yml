@@ -19,5 +19,9 @@ jobs:
         run: python3 -c "import json; m = json.load(open('manifest.json')); assert m['id'] and m['version'] and m['entryPoints']"
       - name: EQ model tests
         run: node tests/eq.test.js
+      - name: Audio helpers
+        run: node tests/audio.test.js
+      - name: Shortcut bind block
+        run: node tests/shortcut.test.js
       - name: Engine tests
         run: python3 -B -m unittest discover tests

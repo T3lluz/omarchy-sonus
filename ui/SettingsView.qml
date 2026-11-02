@@ -111,30 +111,11 @@ Column {
 
   Caption {
     width: parent.width
-    text: "Ctrl+Alt+V opens this panel when bound in ~/.config/hypr/bindings.lua:"
+    text: view.service && view.service.shortcutStatus === "installed"
+      ? "Ctrl+Alt+V opens this panel. Sonus keeps that chord bound in ~/.config/hypr/bindings.lua, unbinding anything else on it first."
+      : "Ctrl+Alt+V should open this panel. Sonus is still writing that bind into ~/.config/hypr/bindings.lua."
     foreground: view.host.fg
     fontFamily: view.host.fontFamily
-  }
-
-  Rectangle {
-    width: parent.width
-    height: code.implicitHeight + Style.space(12)
-    radius: Style.cornerRadius > 0 ? Style.space(4) : 0
-    color: Style.hoverFillFor(view.host.fg, Commons.Color.accent)
-
-    Text {
-      id: code
-      x: Style.space(8)
-      y: Style.space(6)
-      width: parent.width - Style.space(16)
-      // Broken by hand: wrapping left the closing paren alone on a line.
-      wrapMode: Text.WrapAnywhere
-      textFormat: Text.PlainText
-      text: 'o.bind("CTRL + ALT + V", "Sonus",\n       "omarchy-shell sonus toggle")'
-      color: view.host.fg
-      font.family: view.host.fontFamily
-      font.pixelSize: Style.font.caption
-    }
   }
 
   PanelSeparator { foreground: view.host.fg }
