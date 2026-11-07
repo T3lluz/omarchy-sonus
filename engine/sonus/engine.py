@@ -658,10 +658,14 @@ class Engine:
             text = f"Updated to {version}" if version else "Updated"
             if result.get("stashed"):
                 text += ". Local edits were set aside with git stash"
-            # The reload closed the panel, so say it on the desktop instead.
-            if not self.active:
-                updater.notify("Sonus updated", text)
-            self.notice(text)
+            # The result is already cleared, so this happens once. The shell's
+            # reload keeps the QML it compiled, and the old panel would stay on
+            # screen reading the new version number. The restart closes the
+            # panel, so this is said on the desktop.
+            updater.notify("Sonus updated", text)
+            if updater.restart_shell():
+                return
+            self.notice(text + ". Run: omarchy restart shell")
             self.update_check()
         elif result.get("current"):
             self.emit({"type": "update", "busy": False, "applying": False, "state": "current",

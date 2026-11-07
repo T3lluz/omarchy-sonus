@@ -5,7 +5,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 # Imports from engine/ would leave bytecode in the plugin folder, and the
@@ -278,6 +280,45 @@ class UpdaterTest(unittest.TestCase):
 
     def test_a_folder_without_git_is_unmanaged(self):
         self.assertEqual(updater.check(self.tmp / "bin").state, "unmanaged")
+
+    def test_a_finished_update_restarts_the_shell_once(self):
+        # The shell's reload keeps compiled QML, so only a restart shows the new panel.
+        from sonus.engine import Engine
+        engine = mock.MagicMock()
+        with mock.patch.object(updater, "restart_shell", return_value=True) as restart, \
+                mock.patch.object(updater, "notify") as notify:
+            Engine._report_update(engine, {"ok": True, "version": "1.1.0"})
+            restart.assert_called_once()
+            notify.assert_called_once_with("Sonus updated", "Updated to 1.1.0")
+            engine.update_check.assert_not_called()
+            self.assertIsNone(updater.read_result())
+
+            restart.reset_mock()
+            Engine._report_update(engine, {"current": True})
+            Engine._report_update(engine, {"message": "no"})
+            restart.assert_not_called()
+
+    def test_a_restart_that_cannot_start_says_how(self):
+        from sonus.engine import Engine
+        engine = mock.MagicMock()
+        with mock.patch.object(updater, "restart_shell", return_value=False), mock.patch.object(updater, "notify"):
+            Engine._report_update(engine, {"ok": True, "version": "1.1.0"})
+        self.assertIn("omarchy restart shell", engine.notice.call_args[0][0])
+        engine.update_check.assert_called_once()
+
+    def test_restart_shell_runs_apart_from_the_engine(self):
+        marker = self.tmp / "restarted"
+        script = self.bin / "omarchy-restart-shell"
+        script.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        script.chmod(0o755)
+        real_which = shutil.which
+        with mock.patch.object(updater.shutil, "which",
+                               side_effect=lambda name: None if name == "systemd-run" else real_which(name)):
+            self.assertTrue(updater.restart_shell())
+        deadline = time.time() + 5
+        while not marker.exists() and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertTrue(marker.exists())
 
     def test_run_sets_local_edits_aside_and_updates(self):
         (self.plugin / "manifest.json").write_text(json.dumps({"version": "1.0.0-local"}))

@@ -11,6 +11,9 @@ engine. A child of the engine would die with it halfway through, after the
 merge and before validation, and the update script would roll itself back.
 So the runner lives in its own transient unit and leaves its result in
 ~/.local/state/sonus, where the next engine picks it up.
+
+That next engine runs the new code, so it finishes the job: the shell's reload
+keeps the QML it has already compiled, and only a restart draws the new panel.
 """
 
 from __future__ import annotations
@@ -244,6 +247,32 @@ def start(root: Path, plugin_id: str) -> str:
         clear_result()
         return str(exc)
     return ""
+
+
+def restart_shell() -> bool:
+    """Restart the shell, from outside it: this engine is the shell's child and
+    dies with it, so the command runs on its own. False if it could not start."""
+    command = "omarchy-restart-shell"
+    if shutil.which(command) is None:
+        return False
+    if shutil.which("systemd-run"):
+        try:
+            done = subprocess.run(
+                ["systemd-run", "--user", "--quiet", "--collect", f"--unit={UNIT}-restart",
+                 "--description=Restart the shell after a Sonus update",
+                 f"--setenv=PATH={os.environ.get('PATH', '/usr/bin')}", command],
+                capture_output=True, text=True, timeout=10.0,
+            )
+            if done.returncode == 0:
+                return True
+        except (OSError, subprocess.SubprocessError):
+            pass
+    try:
+        subprocess.Popen([command], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        return False
+    return True
 
 
 def notify(title: str, body: str) -> None:
