@@ -4,23 +4,23 @@
   <p>A Sonar-style mixer for <b>PipeWire</b> that drops down from the Omarchy bar:<br/>
   system output and input, <b>Game, Chat, Media and Aux</b> channels, a saved mix per device, and a 10-band EQ.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v1.6.1-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.7.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-a58bff" />
     <img alt="PipeWire" src="https://img.shields.io/badge/PipeWire-filter--chain-a58bff" />
     <a href="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml/badge.svg" /></a>
     <img alt="License" src="https://img.shields.io/badge/license-MIT-34413e" />
   </p>
   <p><a href="#install"><b>Install</b></a> · <a href="#features">Features</a> · <a href="#use">Use</a> · <a href="#how-it-works">How it works</a></p>
-  <img src="assets/preview.png" width="360" alt="The Sonus panel: output and input, then the four channels with the apps playing in them" />
+  <img src="assets/preview.png" width="640" alt="The Sonus panel: output and input beside the title, then the four channels in a row with the apps playing in them" />
 </div>
 
 ## Features
 
-- **Output and input:** the system volume, mute, and the device list live in the panel. Click a device's name to see the others; choosing an output switches the system to it. The microphone has its own level, mute and a live meter.
+- **Output and input:** each has a tile with the system volume and mute. Click a tile's name to list every device of that kind; choosing an output switches the system to it. The microphone also shows a live meter.
 - **A mix per device:** AirPods keep one volume and equalizer, the laptop speakers keep another. The first time a device is used it starts from the mix you already have; after that, coming back restores it.
-- **See where the sound goes:** the device in use has its own icon (laptop, headphones, headset, AirPods and other earbuds, speaker, monitor) at the top of the panel, drawn in the same style as Batteries. Switching outputs, whether from a keybinding, a cable or Bluetooth, shows a toast with the device's icon and name. Scrolling on the bar icon shows the same icon in the volume toast.
-- **Channels:** Game, Chat, Media and Aux are real PipeWire sinks, each with its own volume and mute, all mixed into the selected output. Each channel is a lane in the panel with the apps playing into it listed inside.
-- **Routing:** every app is a chip with a grip. Drag it to another channel's lane, or click it and pick one. While you drag, every lane shows where it can land, and a **No channel** lane takes apps that should skip the channels. Routes are remembered and enforced whenever the app starts playing again, panel open or not.
+- **See where the sound goes:** every channel tile says where it plays ("To AirPods Pro"). The device in use has its own icon (laptop, headphones, headset, AirPods and other earbuds, speaker, monitor). Switching outputs, whether from a keybinding, a cable or Bluetooth, shows a toast with the device's icon and name. Scrolling on the bar icon shows the same icon in the volume toast.
+- **Channels:** Game, Chat, Media and Aux are real PipeWire sinks, each with its own volume and mute, all mixed into the selected output. Each channel is a tile in a row of four, with its fader on top and a bucket of the apps playing into it along the bottom.
+- **Routing:** every app is a card with a grip. Drag it to another channel's bucket, or click it and pick a channel's icon. While you drag, every tile shows where it can land, and a **No channel** strip takes apps that should skip the channels. Routes are remembered and enforced whenever the app starts playing again, panel open or not.
 - **EQ per channel:** ten octave bands from 32 Hz to 16 kHz with a preamp, presets (Flat, Bass, Voice, Treble, Steps), a smooth curve through the faders, and a bypass switch. Changes apply to the running graph with no gap. The curve is saved with the output device.
 - **Keyboard first:** every row, fader and band is reachable without the mouse.
 - **No gap on reload:** the channels run as the user unit `sonus-graph.service`, so a shell restart or plugin reload adopts the running graph instead of rebuilding it.
@@ -45,14 +45,14 @@ Needs PipeWire with `pipewire-pulse` (Omarchy's default): `pw-dump`, `pw-cli`, `
 | `Ctrl+Alt+V` | Open / close the panel |
 | Click the bar icon | Open the panel |
 | Scroll / middle-click the icon | Output volume / mute |
-| Click the output's or input's name | Show the other devices |
+| Click the output's or input's name | List the devices |
 | Click an output | Use that device, and its saved volume and EQ |
 | Click an input | Use that microphone |
 | Right-click the icon | Settings |
-| Drag an app's chip to another lane | Move it to that channel (or to **No channel**) |
-| Click an app's chip | Pick a channel from buttons |
-| Click a device's or channel's icon | Mute it |
-| "EQ on" / "EQ flat" under a channel | That channel's EQ |
+| Drag an app's card to another tile | Move it to that channel (or to **No channel**) |
+| Click an app's card | Pick a channel from a row of icons |
+| Click the speaker beside a fader | Mute it |
+| **EQ** on a channel's tile (lit when it shapes the sound) | That channel's EQ |
 | `j`/`k`, `h`/`l` | Move, volume |
 | `enter` | Show the devices, pick one, open a channel's EQ or an app's channels |
 | `m`, `e`, `1`–`4` / `0`, `s`, `esc` | Mute, EQ, assign / unassign, settings, back |
@@ -89,7 +89,7 @@ python3 -B -m unittest discover tests
 omarchy restart shell    # pick up QML changes
 ```
 
-The tests check that the panel's EQ model (`ui/Eq.js`) and the engine's (`engine/sonus/eq.py`) agree on the band layout, and that every device shape the engine reports has a drawing. The drawings come from `scripts/draw-glyphs.py`, which writes `ui/Drawings.js`. See [AGENTS.md](AGENTS.md) for how the pieces fit.
+The tests check that the panel's EQ model (`ui/Eq.js`) and the engine's (`engine/sonus/eq.py`) agree on the band layout, and that every device shape the engine reports has an icon. See [AGENTS.md](AGENTS.md) for how the pieces fit.
 
 ## License
 

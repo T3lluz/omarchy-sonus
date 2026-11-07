@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Commons as Commons
+import qs.Ui
 import "Eq.js" as Eq
 
 // One vertical dB fader, drawn the way PanelSlider draws a horizontal one:
@@ -95,6 +96,11 @@ Item {
     border.color: slider.background
     scale: slider.hot ? 1.15 : 1
     Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+  }
+
+  PanelToolTip {
+    visible: mouse.containsMouse && !slider.dragging
+    text: "Double-click to zero it, scroll for 0.5 dB"
   }
 
   MouseArea {

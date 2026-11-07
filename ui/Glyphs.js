@@ -20,10 +20,12 @@ var television = g(0xF0502)
 var microphone = g(0xF036C)
 var microphoneOff = g(0xF036D)
 var camera = g(0xF0100)
-var gamepad = g(0xF0297)
+var gamepad = g(0xF02B4)
 var headset = g(0xF02CE)
 var music = g(0xF075A)
-var aux = g(0xF147D)
+var aux = g(0xF1394)
+var chat = g(0xF028C)
+var noChannel = g(0xF073A)
 var sliders = g(0xF066A)
 var cog = g(0xF0493)
 var close = g(0xF0156)
@@ -32,7 +34,7 @@ var apps = g(0xF003B)
 var check = g(0xF012C)
 var chevronDown = g(0xF0140)
 var chevronUp = g(0xF0143)
-var app = g(0xF0387)
+var app = g(0xF003B)
 var sync = g(0xF04E6)
 var download = g(0xF01DA)
 var alert = g(0xF0026)
@@ -73,8 +75,8 @@ function outputIcon(form, muted, volume) {
 function channel(key) {
   if (key === "master") return speaker
   if (key === "game") return gamepad
-  if (key === "chat") return headset
+  if (key === "chat") return chat
   if (key === "media") return music
   if (key === "aux") return aux
-  return app
+  return noChannel
 }

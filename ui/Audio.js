@@ -16,22 +16,6 @@ function volumeName(volume, muted) {
   return "Whisper"
 }
 
-// The drawing for one of the engine's device shapes (profiles.device_form).
-// Earbuds are drawn as AirPods, the Pro when the name says so.
-function drawingFor(form, label) {
-  if (form === "earbuds") return /\bpro\b/i.test(String(label || "")) ? "airpods-pro" : "airpods"
-  if (form === "laptop") return "laptop"
-  if (form === "headphones") return "headphones"
-  if (form === "headset") return "headset"
-  if (form === "hdmi" || form === "tv") return "monitor"
-  if (form === "mic" || form === "camera") return "microphone"
-  return "speaker"
-}
-
-var CHANNEL_DRAWINGS = { game: "gamepad", chat: "headset", media: "music", aux: "jack" }
-
-function channelDrawing(key) { return CHANNEL_DRAWINGS[key] || "speaker" }
-
 // A channel's EQ in two words: shaping the sound, switched on but flat, or
 // switched off.
 function eqWord(enabled, flat) {
@@ -44,11 +28,6 @@ function appsLine(count) {
   return count === 1 ? "1 app playing" : count + " apps playing"
 }
 
-// Under the lane of apps that skip the channels: where they play.
-function directLine(outputLabel) {
-  return outputLabel ? "Straight to " + outputLabel : "Straight to the output"
-}
-
 // The tooltip on a device's name: how many others there are to pick.
 function othersLine(count, section) {
   var noun = section === "sink" ? "output" : "input"
@@ -56,8 +35,83 @@ function othersLine(count, section) {
   return count === 1 ? "1 other " + noun : count + " other " + noun + "s"
 }
 
-// A name for a StyledText line, so a device called "<b>" stays plain text.
-function escapeHtml(text) {
-  return String(text === undefined || text === null ? "" : text)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+// The line under a channel's name: where it plays, until there is something
+// more pressing to say about it.
+// A name too long for the tile gives way, since the output's own tile shows it
+// in full. `managed` is the setting: channels can also be missing while the
+// graph starts up, and then "off in settings" would send you to the wrong place.
+function channelLine(present, managed, muted, outputLabel) {
+  if (!present) return managed ? "Not running" : "Off in settings"
+  if (muted) return "Muted"
+  return toOutput(outputLabel)
+}
+
+var LINE_LIMIT = 30
+
+function toOutput(outputLabel) {
+  if (!outputLabel) return "No output"
+  var line = "To " + outputLabel
+  return line.length <= LINE_LIMIT ? line : "To the output"
+}
+
+// The hero's caption keeps room for two lines in a narrow column, so a name that
+// would need a third gives way to a shorter sentence.
+var HERO_LIMIT = 34
+
+function fitted(line, shorter) {
+  return String(line).length <= HERO_LIMIT ? String(line) : String(shorter)
+}
+
+// What the hero's caption takes turns saying while nothing is happening,
+// the way the official panels rotate theirs. The facts only: an empty list
+// never comes back, so the caption always has something to show.
+function heroPhrases(state) {
+  var list = [appsLine(state.apps)]
+  if (state.output) {
+    var on = fitted("On " + state.output, "")
+    if (on) list.push(on)
+  }
+  list.push(volumeName(state.volume, state.muted))
+  if (state.eqOn && state.eqOn.length > 0) list.push("EQ on " + state.eqOn.join(", "))
+  if (state.inputMuted) list.push("Mic muted")
+  if (state.apps > 0 && state.channelsOn) {
+    list.push("Drag apps between channels")
+    list.push("One fader and EQ per channel")
+  }
+  return list
+}
+
+function movingLine(appName) {
+  return fitted("Moving " + appName, "Moving an app")
+}
+
+function dropLine(appName, channelTitle) {
+  return fitted("Move " + appName + " to " + channelTitle, "Move to " + channelTitle)
+}
+
+function movedLine(appName, channelTitle) {
+  return fitted(appName + " moved to " + channelTitle, "Moved to " + channelTitle)
+}
+
+function switchedLine(section, label) {
+  return section === "sink"
+    ? fitted("Playing through " + label, "Output switched")
+    : fitted("Recording from " + label, "Input switched")
+}
+
+// What an empty bucket says.
+function bucketLine(present, dragging, appCount) {
+  // While dragging, the outline, the hero and the card in the air already say it.
+  if (!present || dragging) return ""
+  return appCount > 0 ? "Drag an app here" : "No apps yet"
+}
+
+// The equalizer's caption while no band is being touched. The one warning
+// worth saying comes first: a boost past 0 dB can clip.
+function eqLine(enabled, presetName, gains, preamp) {
+  if (!enabled) return "Bypassed"
+  var peak = 0
+  for (var i = 0; i < gains.length; i++) peak = Math.max(peak, Number(gains[i]) || 0)
+  if (peak + (Number(preamp) || 0) > 0) return "Boost can clip, lower preamp"
+  return presetName || "Custom curve"
 }

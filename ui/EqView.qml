@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "Audio.js" as Audio
 import "Eq.js" as Eq
 import "Glyphs.js" as Glyphs
 
@@ -18,6 +19,8 @@ Column {
   property real preamp: 0
   property bool loading: false
   property int band: -1
+  // The band under the pointer, for the captions.
+  property int hoverBand: -1
 
   spacing: Style.space(12)
 
@@ -106,71 +109,83 @@ Column {
 
   // ---- header -----------------------------------------------------------------
 
-  // The hero, as on every panel of the family: the channel, what the EQ is
-  // doing, and on the right the bypass switch and the way back.
-  PanelHero {
+  // One row: the channel and what the EQ is doing, the presets, and the bypass
+  // switch and the way back.
+  Item {
     width: parent.width
-    title: view.title + " equalizer"
-    meta: (view.eqEnabled ? (view.presetName || "Custom") : "Bypassed") + " · preamp " + Eq.dbText(view.preamp)
-    foreground: view.host.fg
-    fontFamily: view.host.fontFamily
-    iconComponent: Component {
-      Text {
-        textFormat: Text.PlainText
-        text: Glyphs.channel(view.key)
-        color: view.host.fg
-        font.family: view.host.fontFamily
-        font.pixelSize: Style.font.display
+    height: Math.max(eqHero.implicitHeight, presets.implicitHeight, eqActions.implicitHeight)
+
+    HeroBlock {
+      id: eqHero
+      width: (parent.width - view.host.tileGap * 3) / 4
+      anchors.verticalCenter: parent.verticalCenter
+      host: view.host
+      title: view.title + " EQ"
+      // Reads out the band being touched, then goes back to the curve.
+      line: {
+        var b = view.band >= 0 ? view.band : view.hoverBand
+        if (b >= 0) return Eq.BAND_LABELS[b] + " Hz, " + Eq.dbText(view.gains[b] || 0)
+        return Audio.eqLine(view.eqEnabled, view.presetName, view.gains, view.preamp)
+      }
+      iconComponent: Component {
+        Text {
+          horizontalAlignment: Text.AlignHCenter
+          verticalAlignment: Text.AlignVCenter
+          textFormat: Text.PlainText
+          text: Glyphs.channel(view.key)
+          color: view.host.fg
+          font.family: view.host.fontFamily
+          font.pixelSize: Style.font.display
+        }
       }
     }
-    trailingControl: Component {
-      Row {
-        spacing: Style.space(10)
 
-        ToggleSwitch {
-          id: toggle
-          anchors.verticalCenter: parent.verticalCenter
-          checked: view.eqEnabled
-          foreground: view.host.fg
-          onToggled: {
-            view.eqEnabled = !view.eqEnabled
-            view.commit()
-          }
+    Seg {
+      id: presets
+      anchors.left: eqHero.right
+      anchors.leftMargin: view.host.tileGap
+      anchors.right: eqActions.left
+      anchors.rightMargin: Style.space(10)
+      anchors.verticalCenter: parent.verticalCenter
+      options: Eq.PRESETS.map(function(p) { return { value: p.name, label: p.name } })
+      value: view.presetName
+      foreground: view.host.fg
+      fontFamily: view.host.fontFamily
+      onPicked: function(value) { view.applyPreset(value) }
+    }
 
-          PanelToolTip {
-            visible: toggle.containsMouse
-            text: view.eqEnabled ? "Bypass the EQ (space)" : "Enable the EQ (space)"
-            fontFamily: view.host.fontFamily
-          }
+    Row {
+      id: eqActions
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(10)
+
+      ToggleSwitch {
+        id: toggle
+        anchors.verticalCenter: parent.verticalCenter
+        checked: view.eqEnabled
+        foreground: view.host.fg
+        onToggled: {
+          view.eqEnabled = !view.eqEnabled
+          view.commit()
         }
 
-        PanelActionButton {
-          anchors.verticalCenter: parent.verticalCenter
-          iconText: Glyphs.back
-          tooltipText: "Back to the mixer (esc)"
-          foreground: view.host.fg
+        PanelToolTip {
+          visible: toggle.containsMouse
+          text: view.eqEnabled ? "Bypass the EQ (space)" : "Enable the EQ (space)"
           fontFamily: view.host.fontFamily
-          onClicked: view.host.setView("mixer")
         }
       }
+
+      PanelActionButton {
+        anchors.verticalCenter: parent.verticalCenter
+        iconText: Glyphs.back
+        tooltipText: "Back to the mixer (esc)"
+        foreground: view.host.fg
+        fontFamily: view.host.fontFamily
+        onClicked: view.host.setView("mixer")
+      }
     }
-  }
-
-  PanelSeparator { foreground: view.host.fg }
-
-  SectionHeader {
-    icon: Glyphs.sliders
-    title: "PRESETS"
-    foreground: view.host.fg
-    fontFamily: view.host.fontFamily
-  }
-
-  Seg {
-    options: Eq.PRESETS.map(function(p) { return { value: p.name, label: p.name } })
-    value: view.presetName
-    foreground: view.host.fg
-    fontFamily: view.host.fontFamily
-    onPicked: function(value) { view.applyPreset(value) }
   }
 
   // ---- bands ----------------------------------------------------------------
@@ -178,7 +193,7 @@ Column {
   Item {
     id: bandArea
     width: parent.width
-    height: Style.space(228)
+    height: Style.space(180)
 
     readonly property real labelW: Style.space(26)
     readonly property real x0: labelW
@@ -284,6 +299,10 @@ Column {
         background: Commons.Color.popups.background
         dimmed: !view.eqEnabled
         hasCursor: view.band === index
+        onHotChanged: {
+          if (hot) view.hoverBand = index
+          else if (view.hoverBand === index) view.hoverBand = -1
+        }
         onShownChanged: curve.requestPaint()
         onMoved: function(v) {
           var next = view.gains.slice()
@@ -333,51 +352,54 @@ Column {
 
   // ---- preamp -----------------------------------------------------------------
 
-  SectionHeader {
-    icon: Glyphs.volumeMid
-    title: "PREAMP"
-    detail: Eq.dbText(preSlider.dragging ? preSlider.liveValue : view.preamp).toUpperCase()
-    foreground: view.host.fg
-    fontFamily: view.host.fontFamily
-  }
-
-  PanelSlider {
-    id: preSlider
-    bar: view.host.bar
-    width: parent.width
-    minimum: -Eq.PREAMP_LIMIT
-    maximum: Eq.PREAMP_LIMIT
-    step: 0.5
-    tickCount: 3
-    value: view.preamp
-    opacity: view.eqEnabled ? 1 : 0.45
-    onMoved: function(v) {
-      view.preamp = Eq.snap(v)
-      view.commit()
-    }
-    onRightClicked: {
-      view.preamp = 0
-      view.commit()
-    }
-  }
-
-  PanelSeparator { foreground: view.host.fg }
-
   Item {
     width: parent.width
-    implicitHeight: Math.max(hint.implicitHeight, resetButton.implicitHeight)
+    implicitHeight: Math.max(preSlider.implicitHeight, resetButton.implicitHeight)
+
+    PanelSectionHeader {
+      id: preLabel
+      anchors.left: parent.left
+      anchors.verticalCenter: parent.verticalCenter
+      text: "PREAMP"
+      foreground: view.host.fg
+      fontFamily: view.host.fontFamily
+    }
+
+    PanelSlider {
+      id: preSlider
+      bar: view.host.bar
+      anchors.left: preLabel.right
+      anchors.leftMargin: Style.space(10)
+      anchors.right: preValue.left
+      anchors.rightMargin: Style.space(6)
+      anchors.verticalCenter: parent.verticalCenter
+      minimum: -Eq.PREAMP_LIMIT
+      maximum: Eq.PREAMP_LIMIT
+      step: 0.5
+      tickCount: 3
+      value: view.preamp
+      opacity: view.eqEnabled ? 1 : 0.45
+      onMoved: function(v) {
+        view.preamp = Eq.snap(v)
+        view.commit()
+      }
+      onRightClicked: {
+        view.preamp = 0
+        view.commit()
+      }
+    }
 
     Text {
-      id: hint
-      anchors.left: parent.left
+      id: preValue
       anchors.right: resetButton.left
       anchors.rightMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
-      wrapMode: Text.WordWrap
-      text: "Double-click a band to zero it, scroll for 0.5 dB. Big boosts? Pull the preamp down."
+      textFormat: Text.PlainText
+      text: Eq.dbText(preSlider.dragging ? preSlider.liveValue : view.preamp).toUpperCase()
       color: view.host.dim
       font.family: view.host.fontFamily
       font.pixelSize: Style.font.caption
+      font.bold: true
     }
 
     Button {

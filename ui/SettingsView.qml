@@ -73,7 +73,6 @@ Column {
   PanelSeparator { foreground: view.host.fg }
 
   SectionHeader {
-    icon: Glyphs.cog
     title: "GENERAL"
     foreground: view.host.fg
     fontFamily: view.host.fontFamily
@@ -82,7 +81,7 @@ Column {
   SwitchRow {
     icon: Glyphs.sliders
     label: "Virtual channels"
-    hint: "Game, Chat, Media and Aux. Each output keeps its own volume and equalizer."
+    hint: "Game, Chat, Media and Aux, mixed per output"
     checked: view.service ? view.service.manageGraph : true
     foreground: view.host.fg
     fontFamily: view.host.fontFamily
@@ -103,25 +102,78 @@ Column {
   PanelSeparator { foreground: view.host.fg }
 
   SectionHeader {
-    icon: Glyphs.keyboard
     title: "SHORTCUT"
     foreground: view.host.fg
     fontFamily: view.host.fontFamily
   }
 
-  Caption {
+  // The chord, as the key it is. Sonus writes the bind itself, so all this
+  // says is whether that has happened yet.
+  Item {
+    readonly property bool bound: !!view.service && view.service.shortcutStatus === "installed"
     width: parent.width
-    text: view.service && view.service.shortcutStatus === "installed"
-      ? "Ctrl+Alt+V opens this panel. Sonus keeps that chord bound in ~/.config/hypr/bindings.lua, unbinding anything else on it first."
-      : "Ctrl+Alt+V should open this panel. Sonus is still writing that bind into ~/.config/hypr/bindings.lua."
-    foreground: view.host.fg
-    fontFamily: view.host.fontFamily
+    implicitHeight: Math.max(chord.height, shortcutLine.implicitHeight)
+
+    Glyph {
+      id: shortcutIcon
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      width: Style.space(22)
+      icon: Glyphs.keyboard
+      size: Style.font.title
+      color: view.host.fg
+      fontFamily: view.host.fontFamily
+    }
+
+    Text {
+      id: shortcutLine
+      anchors.left: shortcutIcon.right
+      anchors.leftMargin: Style.space(10)
+      anchors.right: chord.left
+      anchors.rightMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      wrapMode: Text.Wrap
+      textFormat: Text.PlainText
+      text: parent.bound ? "Opens this panel" : "Setting up the bind"
+      color: parent.bound ? view.host.fg : view.host.dim
+      font.family: view.host.fontFamily
+      font.pixelSize: Style.font.body
+    }
+
+    CursorSurface {
+      id: chord
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      width: chordText.implicitWidth + Style.space(12)
+      height: chordText.implicitHeight + Style.space(6)
+      bordered: true
+      foreground: view.host.fg
+
+      Text {
+        id: chordText
+        anchors.centerIn: parent
+        textFormat: Text.PlainText
+        text: "Ctrl+Alt+V"
+        color: view.host.fg
+        font.family: view.host.fontFamily
+        font.pixelSize: Style.font.caption
+        font.bold: true
+      }
+
+      HoverHandler { id: chordHover }
+
+      PanelToolTip {
+        visible: chordHover.hovered
+        text: "Kept bound in ~/.config/hypr/bindings.lua"
+        fontFamily: view.host.fontFamily
+      }
+    }
   }
 
   PanelSeparator { foreground: view.host.fg }
 
   UpdateSection {
-    icon: Glyphs.update
     name: "Sonus"
     version: view.service ? view.service.version : ""
     line: view.updateLine
