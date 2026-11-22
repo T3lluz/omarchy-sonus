@@ -24,7 +24,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import effects, legacy, pipewire, profiles, updater
+from . import effects, legacy, notices, pipewire, profiles, updater
 from . import eq as eqmod
 from .config import CHANNELS, SINK_CHANNELS, SINK_KEYS, load_settings, save_settings
 from .graph import GraphProcess
@@ -300,6 +300,12 @@ class Engine:
         elif cmd == "updateApply":
             # Waits on the runner for minutes; keep it off the shared pool.
             threading.Thread(target=self.update_apply, daemon=True).start()
+        elif cmd == "look":
+            # Style.space(40), the shell's picture slot, for the badges.
+            notices.set_slot(msg.get("slot"))
+        elif cmd == "previewNotices":
+            version = updater.installed_version(self.plugin_dir)
+            threading.Thread(target=notices.preview, args=(version,), daemon=True).start()
 
     def _note_levels(self, ids: list[int], volume: float | None = None, muted: bool | None = None) -> None:
         """Remember a fader move on the device that is playing. Caller holds the lock."""
@@ -662,7 +668,7 @@ class Engine:
             # reload keeps the QML it compiled, and the old panel would stay on
             # screen reading the new version number. The restart closes the
             # panel, so this is said on the desktop.
-            updater.notify("Sonus updated", text)
+            notices.updated(version, bool(result.get("stashed")))
             if updater.restart_shell():
                 return
             self.notice(text + ". Run: omarchy restart shell")
@@ -675,7 +681,7 @@ class Engine:
             self.emit({"type": "update", "busy": False, "applying": False, "state": "failed",
                        "local": updater.local_commit(self.plugin_dir), "message": message})
             if not self.active:
-                updater.notify("Sonus could not update", message)
+                notices.failed(message)
             self.notice(f"Update failed: {message}", error=True)
 
     def resume_update(self) -> None:

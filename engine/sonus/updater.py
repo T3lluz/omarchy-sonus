@@ -275,16 +275,6 @@ def restart_shell() -> bool:
     return True
 
 
-def notify(title: str, body: str) -> None:
-    if shutil.which("notify-send") is None:
-        return
-    try:
-        subprocess.run(["notify-send", "--app-name=Sonus", "--icon=audio-card", title, body],
-                       capture_output=True, timeout=5.0)
-    except (OSError, subprocess.SubprocessError):
-        pass
-
-
 def _last_line(text: str) -> str:
     lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
     line = lines[-1] if lines else ""

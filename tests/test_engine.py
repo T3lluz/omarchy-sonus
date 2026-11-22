@@ -19,7 +19,7 @@ os.environ["XDG_CONFIG_HOME"] = _config_home
 os.environ["XDG_STATE_HOME"] = tempfile.mkdtemp(prefix="sonus-state-")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine"))
 
-from sonus import config, eq, graph, pipewire, profiles, updater  # noqa: E402
+from sonus import config, eq, graph, notices, pipewire, profiles, updater  # noqa: E402
 
 
 class ChannelEqTest(unittest.TestCase):
@@ -286,10 +286,10 @@ class UpdaterTest(unittest.TestCase):
         from sonus.engine import Engine
         engine = mock.MagicMock()
         with mock.patch.object(updater, "restart_shell", return_value=True) as restart, \
-                mock.patch.object(updater, "notify") as notify:
+                mock.patch.object(notices, "updated") as notify, mock.patch.object(notices, "failed"):
             Engine._report_update(engine, {"ok": True, "version": "1.1.0"})
             restart.assert_called_once()
-            notify.assert_called_once_with("Sonus updated", "Updated to 1.1.0")
+            notify.assert_called_once_with("1.1.0", False)
             engine.update_check.assert_not_called()
             self.assertIsNone(updater.read_result())
 
@@ -301,7 +301,7 @@ class UpdaterTest(unittest.TestCase):
     def test_a_restart_that_cannot_start_says_how(self):
         from sonus.engine import Engine
         engine = mock.MagicMock()
-        with mock.patch.object(updater, "restart_shell", return_value=False), mock.patch.object(updater, "notify"):
+        with mock.patch.object(updater, "restart_shell", return_value=False), mock.patch.object(notices, "updated"):
             Engine._report_update(engine, {"ok": True, "version": "1.1.0"})
         self.assertIn("omarchy restart shell", engine.notice.call_args[0][0])
         engine.update_check.assert_called_once()
@@ -349,6 +349,149 @@ class UpdaterTest(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["message"], "cannot fast-forward")
         self.assertEqual((self.plugin / "notes.txt").read_text(), "keep me")
+
+
+class NoticesTest(unittest.TestCase):
+    """The notifications' words and their pixel badge."""
+
+    def setUp(self):
+        notices._ids_path().unlink(missing_ok=True)
+
+    GREY_THEME = {"foreground": "#cacccc", "background": "#101315", "urgent": "#565d60"}
+    RED_THEME = {"foreground": "#cacccc", "background": "#101315", "urgent": "#e06c75"}
+
+    def test_the_words(self):
+        self.assertEqual(notices.updated_text("1.9"), ("Sonus updated", "Sonus is on 1.9 now."))
+        self.assertEqual(notices.updated_text("", True),
+                         ("Sonus updated", "Sonus is on the latest version. Your local edits are in git stash."))
+        self.assertEqual(notices.failed_text("could not reach github.com"),
+                         ("Sonus could not update", "Could not reach github.com."))
+        self.assertEqual(notices.failed_text("Nope!"), ("Sonus could not update", "Nope!"))
+        self.assertEqual(notices.failed_text(""), ("Sonus could not update", "The update failed."))
+
+    def test_the_slot_in_device_pixels(self):
+        # Style.space(40) is 37 on this machine's UI scale.
+        self.assertEqual(notices.badge_size(37, 1.25), 46)
+        self.assertEqual(notices.badge_size(37, 2.0), 74)
+        self.assertEqual(notices.badge_size(40, 1.0), 40)
+
+    def test_the_theme_colours_as_the_shell_reads_them(self):
+        colors = notices.theme_colors('foreground = "#aabbcc"\nbackground = "#000000"\ncolor1 = "#ff0000"\n')
+        self.assertEqual(colors, {"foreground": "#aabbcc", "background": "#000000", "urgent": "#ff0000"})
+        self.assertEqual(notices.theme_colors("")["foreground"], "#cacccc")
+
+    def test_a_failure_takes_the_urgent_colour_only_where_it_reads(self):
+        fg = notices.hex_rgb("#cacccc")
+        self.assertEqual(notices.tone("updated", self.RED_THEME), fg)
+        self.assertEqual(notices.tone("failed", self.RED_THEME), notices.hex_rgb("#e06c75"))
+        # Some themes' red is a grey; the warning icon carries it then.
+        self.assertEqual(notices.tone("failed", self.GREY_THEME), fg)
+
+    def test_the_logo_is_the_panels(self):
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("node is missing")
+        model = Path(__file__).resolve().parent.parent / "ui" / "Model.js"
+        script = ("const fs=require('fs');const vm=require('vm');const c={};vm.createContext(c);"
+                  "vm.runInContext(fs.readFileSync(process.argv[1],'utf8').replace('.pragma library',''),c);"
+                  "console.log(JSON.stringify({lit:c.sonusLogo(null,'lit'),track:c.sonusLogo(null,'track')}))")
+        out = json.loads(subprocess.run([node, "-e", script, str(model)], capture_output=True,
+                                        text=True, check=True).stdout)
+
+        def cells(rects):
+            return {(x + dx, y + dy) for x, y, w, h in rects for dx in range(w) for dy in range(h)}
+
+        for part in ("lit", "track"):
+            for grid in ("g12", "g24"):
+                self.assertEqual(cells(notices.logo(part)[grid]), cells(out[part][grid]), (part, grid))
+
+    def alphas(self, rows):
+        return {rows[y][x * 4 + 3] for y in range(len(rows)) for x in range(len(rows[0]) // 4)}
+
+    def test_the_badge_is_whole_pixels_of_the_tone(self):
+        for size in (46, 74, 40):
+            for kind in ("updated", "failed"):
+                rows = notices.badge(kind, size, self.RED_THEME)
+                self.assertEqual(len(rows), size)
+                self.assertEqual(len(rows[0]), size * 4)
+                # The tile, the meter's track, its outline, the mark's dim
+                # track and solid: nothing in between, so nothing was smoothed.
+                tile = round(0.14 * 255)
+                allowed = {tile, 255}
+                for a in (0.12, 0.6, 0.4):
+                    sa = round(a * 255) / 255
+                    allowed.add(round((sa + tile / 255 * (1 - sa)) * 255))
+                self.assertLessEqual(self.alphas(rows), allowed, (kind, size))
+                rgb = notices.tone(kind, self.RED_THEME)
+                self.assertEqual(tuple(rows[0][0:3]), rgb)
+
+    def test_the_meter_says_whether_it_went_through(self):
+        size = 46
+        u = size // 20
+        top = (size - 20 * u) // 2
+        bx, by = (size - 18 * u) // 2, top + 14 * u
+
+        def lit(rows):
+            return [rows[by + 2 * u][(bx + 2 * u + n * 3 * u) * 4 + 3] == 255 for n in range(5)]
+
+        self.assertEqual(lit(notices.badge("updated", size, self.RED_THEME)), [True] * 5)
+        self.assertEqual(lit(notices.badge("failed", size, self.RED_THEME)), [False] * 5)
+
+    def test_the_icon_fills_twelve_units(self):
+        for size in (46, 74):
+            u = size // 20
+            rows = notices.badge_pixels(size, [({"g24": [[0, 0, 24, 24]], "g12": [[0, 0, 12, 12]]}, 1.0)], 0, (1, 2, 3))
+            solid = [(x, y) for y in range(size) for x in range(size) if rows[y][x * 4 + 3] == 255]
+            xs = [x for x, y in solid if y < (size - 20 * u) // 2 + 12 * u]
+            self.assertEqual(max(xs) - min(xs) + 1, 12 * u, size)
+
+    def test_the_badge_goes_to_the_state_dir(self):
+        path = Path(notices.write_badge("updated", 46, self.RED_THEME))
+        plugin = Path(__file__).resolve().parent.parent
+        self.assertFalse(str(path).startswith(str(plugin)))
+        self.assertEqual(path.name, "updated-46.png")
+        data = path.read_bytes()
+        self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(data[16:24], bytes([0, 0, 0, 46, 0, 0, 0, 46]))
+        self.assertFalse(path.name.endswith("-symbolic.png"))
+
+    def test_the_command(self):
+        cmd = notices.command("T", "B", "/x.png", ["omarchy-shell", "sonus", "open"], 7)
+        self.assertIn("string:omarchy-exec-argv:" + json.dumps(["omarchy-shell", "sonus", "open"]), cmd)
+        self.assertEqual(cmd[cmd.index("-r") + 1], "7")
+        self.assertEqual(cmd[cmd.index("-i") + 1], "/x.png")
+        self.assertEqual(cmd[-3:], ["--", "T", "B"])
+        self.assertNotIn("-r", notices.command("T", "B", "", ["x"]))
+        self.assertEqual(notices.command("T", "B", "", ["x"])[notices.command("T", "B", "", ["x"]).index("-i") + 1],
+                         "audio-card")
+
+    def test_a_success_takes_the_place_of_a_failure(self):
+        with mock.patch.object(notices, "send", side_effect=[11, 12, 13, 14]) as send:
+            notices.failed("no network")
+            notices.failed("still no network")
+            notices.updated("1.9")
+            notices.updated("2.0")
+        calls = send.call_args_list
+        self.assertEqual(calls[0].args[0], "failed")
+        self.assertEqual(calls[0].args[3], ["omarchy-shell", "sonus", "settings"])
+        self.assertEqual(calls[0].args[4], 0)
+        # A second failure replaces the first, and the success the second.
+        self.assertEqual(calls[1].args[4], 11)
+        self.assertEqual(calls[2].args[0], "updated")
+        self.assertEqual(calls[2].args[3], ["omarchy-shell", "sonus", "open"])
+        self.assertEqual(calls[2].args[4], 12)
+        # With the failure answered, the next success is a card of its own.
+        self.assertEqual(calls[3].args[4], 0)
+
+    def test_the_preview_leaves_real_failures_alone(self):
+        with mock.patch.object(notices, "send", side_effect=[21, 22, 23, 24]) as send:
+            notices.failed("no network")
+            notices.preview("1.9", delay=0)
+            notices.updated("1.9")
+        calls = send.call_args_list
+        self.assertEqual(calls[1].args[4], 0)
+        self.assertEqual(calls[2].args[4], 22)
+        self.assertEqual(calls[3].args[4], 21)
 
 
 if __name__ == "__main__":

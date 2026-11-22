@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Pipewire
+import qs.Commons
 import "ui/Eq.js" as Eq
 import "ui/Glyphs.js" as Glyphs
 import "ui/Shortcut.js" as Shortcut
@@ -446,12 +447,19 @@ Scope {
     onRunningChanged: {
       if (running) {
         root.send({ cmd: "active", value: root.opened })
+        root.send({ cmd: "look", slot: root.badgeSlot })
         return
       }
       root.engineUp = false
       restartTimer.start()
     }
   }
+
+  // The engine draws its notifications' pictures (engine/sonus/notices.py)
+  // for the slot the shell shows them in, Style.space(40), which follows
+  // the theme's font size; it multiplies by the focused screen's scale.
+  readonly property int badgeSlot: Style.space(40)
+  onBadgeSlotChanged: send({ cmd: "look", slot: badgeSlot })
 
   // An engine that dies comes back, though not faster than every 3 s.
   Timer {
@@ -495,6 +503,12 @@ Scope {
     function close(): void { root.hide() }
     function eq(category: string): void { root.showView("eq:" + category) }
     function settings(): void { root.showView("settings") }
+    // Sonus's notifications on made-up values: an update fails, and six
+    // seconds later a retry goes through on the same card.
+    function previewNotices(): string {
+      root.send({ cmd: "previewNotices" })
+      return "sending"
+    }
     // The panel's Switch: stop the Sonus desktop app and its autostart.
     // Also useful when the app is not running but would start at login.
     function takeover(): string {

@@ -4,7 +4,7 @@
   <p>A Sonar-style mixer for <b>PipeWire</b> that drops down from the Omarchy bar:<br/>
   system output and input, <b>Game, Chat, Media and Aux</b> channels, a saved mix per device, and a 10-band EQ.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v1.8.1-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.9.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-a58bff" />
     <img alt="PipeWire" src="https://img.shields.io/badge/PipeWire-filter--chain-a58bff" />
     <a href="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml/badge.svg" /></a>
@@ -70,6 +70,7 @@ omarchy-shell sonus settings
 omarchy-shell sonus takeover        # retire the Sonus desktop app: stop it, remove its autostart
 omarchy-shell sonus update          # install a waiting update, or check for one
 omarchy-shell sonus status          # JSON: engine, master volume, apps, output
+omarchy-shell sonus previewNotices  # show the update notifications on made-up values
 ```
 
 ## How it works
