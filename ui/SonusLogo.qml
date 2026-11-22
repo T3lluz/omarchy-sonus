@@ -18,32 +18,46 @@ Item {
   property bool muted: false
   property bool animated: false
 
-  readonly property var target: muted ? Model.LOGO_DOWN : Model.LOGO_KNOBS
-  // Where the knobs start from and how far along they are; at rest, `k` is 1
-  // and the knobs are on `target`.
+  // Where the knobs come from and go to, and how far along they are. Plain
+  // values, set by the handlers below, so drawing the knobs never runs into
+  // a change it is itself causing.
   property var from: Model.LOGO_KNOBS
-  property var settled: null
+  property var to: Model.LOGO_KNOBS
   property real k: 1
-  readonly property var knobs: Model.logoKnobs(from, target, k)
+  readonly property var knobs: Model.logoKnobs(from, to, k)
 
   implicitWidth: lit.implicitWidth
   implicitHeight: lit.implicitHeight
 
-  Component.onCompleted: { settled = target; from = target }
+  function goal() { return muted ? Model.LOGO_DOWN : Model.LOGO_KNOBS }
+
+  Component.onCompleted: {
+    run.stop()
+    from = goal()
+    to = goal()
+    k = 1
+  }
 
   // From the faders down, as the panel opens.
   function play() {
     if (!animated || Style.reduceMotion) return
     from = Model.LOGO_DOWN
+    to = goal()
     run.restart()
   }
 
   // Muting slides the faders down from wherever they are, unmuting back up.
-  onTargetChanged: {
-    var start = settled === null ? target : run.running ? Model.logoKnobs(from, settled, k) : settled
-    settled = target
-    if (!animated || Style.reduceMotion) { run.stop(); from = target; k = 1; return }
-    from = start
+  onMutedChanged: {
+    var now = knobs
+    if (!animated || Style.reduceMotion) {
+      run.stop()
+      from = goal()
+      to = goal()
+      k = 1
+      return
+    }
+    from = now
+    to = goal()
     run.restart()
   }
 
