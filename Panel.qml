@@ -1,5 +1,7 @@
 import QtQuick
+import QtQuick.Window
 import Quickshell
+import Quickshell.Io
 import Quickshell.Services.Pipewire
 import qs.Commons
 import qs.Commons as Commons
@@ -8,12 +10,16 @@ import "ui"
 import "ui/Audio.js" as Audio
 import "ui/Glyphs.js" as Glyphs
 import "ui/Eq.js" as Eq
+import "ui/Model.js" as Model
 
-// Sonus in the bar. The mark drops the panel: the output and input in use,
-// then one tile per channel holding the apps that play into it. Dragging an
-// app's card to another tile moves it there. Picking an output also brings
-// back that device's volume and equalizer. All state lives in the service;
-// this only draws it.
+// Sonus in the bar, in the Rooms look. The mark, pixel art, drops the panel:
+// the output and input in use, then one room per channel holding the apps
+// that play into it, each in a tone of its own from the theme's palette, with
+// its volume in a block face over a meter of cells that is also its fader.
+// Dragging an app's card to another room moves it there. A click opens a
+// room: the other devices, a channel's equalizer, an app's channels. Picking
+// an output also brings back that device's volume and equalizer. All state
+// lives in the service; this only draws it.
 Panel {
   id: root
   moduleName: "io.github.t3lluz.sonus"
@@ -23,18 +29,20 @@ Panel {
     ? bar.shell.serviceFor(moduleName) : null
 
   readonly property color fg: bar ? bar.foreground : Commons.Color.foreground
-  readonly property color dim: Qt.darker(fg, 1.55)
+  readonly property color dim: Qt.darker(fg, 1.5)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  // Every tile is laid out from these, and they are Omarchy's own: a 22 px
-  // column for icons and mute buttons, the width its audio panel gives a
-  // percent. The mixer is wider than Omarchy's 380 so the four channels fit
-  // side by side, each about as wide as half an official panel row.
-  readonly property real mixerWidth: Style.space(780)
-  readonly property real tileGap: Style.space(6)
-  readonly property real tilePad: Style.space(8)
-  readonly property real iconCol: Style.space(22)
-  readonly property real percentW: Style.space(30)
+  // The mixer is wider than Omarchy's 380 so the four channels fit side by
+  // side, each about as wide as an official panel's half row plus a figure.
+  // Rooms are padded 10 and joined by 3, as in Batteries; their icons are
+  // pixel art at about 20 px (24 device pixels on a 1.25 scale), and names
+  // and meters start past that column.
+  readonly property real mixerWidth: Style.space(860)
+  readonly property real roomGap: Style.space(3)
+  readonly property real roomPad: Style.space(10)
+  readonly property real iconColumn: Math.round(Style.font.heading * 1.25)
+  readonly property real textInset: iconColumn + Style.space(10)
+  readonly property real tileGap: roomGap
 
   readonly property int appCount: service ? service.appsModel.count : 0
 
@@ -53,6 +61,68 @@ Panel {
     return options
   }
 
+  // ---- tones ------------------------------------------------------------------
+
+  // The theme's terminal colours, read from its colors.toml whenever the
+  // panel opens, so a theme switch shows on the next open.
+  property var palette: ({})
+
+  FileView {
+    id: paletteFile
+    path: Commons.Color.currentThemePath + "/colors.toml"
+    blockLoading: false
+    printErrors: false
+    onLoaded: root.palette = Model.parsePalette(text())
+  }
+
+  // A room's colour (Model.roomToneHex): the theme's colour of that name, or
+  // the tone's own hue where the theme's is a grey, softened toward the text
+  // colour. The text colour where it would still read too faint. Only the
+  // panel and the hover card take these; the bar keeps the bar's colours.
+  function toneOf(name) {
+    var c = Qt.color(Model.roomToneHex(name, palette, String(fg)))
+    return Model.contrast(c, Commons.Color.background) >= 2.6 ? c : fg
+  }
+
+  function toneFor(key) { return toneOf(Model.toneName(key)) }
+
+  // ---- motion -----------------------------------------------------------------
+
+  // Goes up each time the panel opens: rooms rise in, meters fill, lines
+  // decode and icons act themselves out, once.
+  property int entry: 0
+
+  // One clock for everything that moves on its own, ticking only while a
+  // ripple still runs.
+  readonly property real clockBase: Date.now()
+  property real clock: 0
+  property real awakeUntil: 0
+
+  function wake(ms) {
+    clock = Date.now() - clockBase
+    awakeUntil = Math.max(awakeUntil, clock + ms)
+  }
+
+  Timer {
+    interval: 70
+    repeat: true
+    running: root.opened && !Style.reduceMotion && root.clock < root.awakeUntil
+    onTriggered: root.clock = Date.now() - root.clockBase
+  }
+
+  // Switching between the mixer, an equalizer and the settings slides the
+  // new page in from the side it lives on, and the gear turns (or the arrow
+  // nudges) as it does.
+  property real pageShift: 0
+  property real pageFade: 1
+  property real gearTurn: 0
+  ParallelAnimation {
+    id: pageIn
+    NumberAnimation { target: root; property: "pageShift"; to: 0; duration: Style.duration(320); easing.type: Easing.OutCubic }
+    NumberAnimation { target: root; property: "pageFade"; to: 1; duration: Style.duration(220); easing.type: Easing.OutCubic }
+    NumberAnimation { target: root; property: "gearTurn"; to: 0; duration: Style.duration(420); easing.type: Easing.OutCubic }
+  }
+
   readonly property string dragName: {
     if (dragKey === "" || !service) return ""
     var info = service.appInfo[dragKey]
@@ -66,11 +136,10 @@ Panel {
 
   // ---- the hero's caption --------------------------------------------------------
 
-  // The official panels' changing text: one caps line under the title. What is
-  // happening right now wins, then a short confirmation of what just happened;
-  // otherwise it takes turns with the facts, at the panels' own pace.
+  // The prompt under the title. What is happening right now wins, then a short
+  // confirmation of what just happened; otherwise it takes turns with the
+  // facts, a new one every 2.8 s, each typed out by the hero.
   property int phraseIndex: 0
-  property real captionOpacity: 1
   property string announced: ""
 
   function announce(line) {
@@ -107,7 +176,7 @@ Panel {
   }
 
   readonly property bool captionHeld: dragKey !== "" || announced !== "" || outputTile.sliding
-    || menuKey !== "" || openDevices !== ""
+    || menuKey !== "" || openDevices !== "" || openChannel !== ""
 
   readonly property string heroLine: {
     var s = service
@@ -119,34 +188,21 @@ Panel {
     if (openDevices !== "") return openDevices === "sink" ? "Pick an output" : "Pick an input"
     // The picker's icons take no keyboard focus, so its keys are said here.
     if (menuKey !== "") return "Pick a channel, or press 0 to 4"
+    if (openChannel !== "") return Audio.fitted(channelTitle(openChannel) + " equalizer, e to edit", "e edits the curve")
     if (outputTile.sliding) return Audio.volumeName(outputTile.level, s.masterMuted)
     var list = heroPhrases
     return list[phraseIndex % list.length]
   }
 
+  // A line that follows the pointer or a fader shows at once; the rest type
+  // themselves out.
+  readonly property bool heroInstant: dragKey !== "" || outputTile.sliding || inputTile.sliding
+
   Timer {
     interval: 2800
     running: root.opened && root.view === "mixer" && !root.captionHeld && root.heroPhrases.length > 1
     repeat: true
-    onTriggered: captionSwap.restart()
-  }
-
-  SequentialAnimation {
-    id: captionSwap
-    PropertyAnimation {
-      target: root; property: "captionOpacity"
-      to: 0; duration: Style.duration(150); easing.type: Easing.OutCubic
-    }
-    ScriptAction { script: root.phraseIndex = root.phraseIndex + 1 }
-    PropertyAnimation {
-      target: root; property: "captionOpacity"
-      to: 1; duration: Style.duration(200); easing.type: Easing.OutCubic
-    }
-  }
-
-  onCaptionHeldChanged: if (captionHeld) {
-    captionSwap.stop()
-    captionOpacity = 1
+    onTriggered: root.phraseIndex = root.phraseIndex + 1
   }
 
   // ---- banners ----------------------------------------------------------------
@@ -191,10 +247,22 @@ Panel {
 
   property string view: "mixer"
 
+  // The order pages live in, left to right, for which side one slides in from.
+  readonly property var pageOrder: ["mixer", "eq", "settings"]
+
   function setView(next) {
+    var from = view
     view = next
     menuKey = ""
+    openChannel = ""
     if (next === "settings" && service) service.checkUpdate(10)
+    if (opened && from !== next && !Style.reduceMotion) {
+      var ahead = pageOrder.indexOf(next) > pageOrder.indexOf(from)
+      pageShift = Style.space(ahead ? 18 : -18)
+      pageFade = 0
+      gearTurn = next === "mixer" ? -1 : 1
+      pageIn.restart()
+    }
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -251,6 +319,7 @@ Panel {
     var others = devices(section).filter(function(d) { return d && d.name && !d.active })
     if (others.length === 0 && openDevices !== section) return
     openDevices = openDevices === section ? "" : section
+    if (openDevices !== "") { openChannel = ""; menuKey = "" }
     if (cursorActive) setCursor(section === "sink" ? "vol:out" : "vol:in")
   }
 
@@ -396,7 +465,16 @@ Panel {
     // With channels off there is nothing to pick from.
     if (routeOptions.length <= 1) return
     menuKey = menuKey === key ? "" : key
+    if (menuKey !== "") { openDevices = ""; openChannel = "" }
     setCursor("app:" + key)
+  }
+
+  // A channel room opened to its equalizer, one room at a time.
+  property string openChannel: ""
+
+  function toggleChannel(key) {
+    openChannel = openChannel === key ? "" : key
+    if (openChannel !== "") { openDevices = ""; menuKey = "" }
   }
 
   function assign(key, channel) {
@@ -471,14 +549,21 @@ Panel {
       menuKey = ""
       openDevices = ""
       shownDevices = ""
+      openChannel = ""
       phraseIndex = 0
       announced = ""
       cursorActive = false
       cursorKey = ""
+      pageIn.stop()
+      pageShift = 0
+      pageFade = 1
+      gearTurn = 0
       endDrag()
+      paletteFile.reload()
       if (flick) flick.contentY = 0
       if (service) service.checkUpdate(60)
       takeRequestedView()
+      entry++
     } else {
       endDrag()
       if (service) service.persist()
@@ -498,36 +583,40 @@ Panel {
     enabled: root.opened && root.view === "mixer" && !!Pipewire.defaultAudioSource
   }
 
+  // Everything on whole device pixels, never scaled. The mark takes the
+  // largest sharp size that is not bigger than the shell's own icons (its
+  // icon size, with pixel art's two units clear around the 24): twelve
+  // device pixels on a 1.25 scale, twenty-four on a 2. The hover card's
+  // figures stand as tall as the bar's digits.
+  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  readonly property int iconUnit: Math.max(1, Math.floor(Style.bar.iconSize * 24 / 20 * dpr / 12))
+  readonly property int pixelUnit: Math.max(1, Math.round(button.fontSize * 0.72 * dpr / 5))
+  readonly property color barFg: bar ? bar.barForeground : Commons.Color.foreground
+
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  BarIconButton {
+  WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    // Sized like the first-party drawn icons (Tailscale, Dropbox): a little
-    // inside the 16 px canvas, so its weight matches the font glyphs beside
-    // it. Even sizes keep the centre on a whole pixel.
-    iconComponent: Component {
-      Item {
-        SonusMark {
-          anchors.centerIn: parent
-          width: Math.round(Style.space(12) / 2) * 2
-          height: width
-          color: button.active && button.useActiveColor ? button.activeColor : button.foreground
-          muted: !!(root.service && root.service.masterMuted)
-        }
-      }
+    hasVisualContent: true
+    fixedWidth: root.vertical ? -1 : Style.bar.iconSlot
+    fixedHeight: root.vertical ? Style.bar.iconSlot : -1
+    // The hover card below takes the place of the plain tooltip.
+    tooltipText: ""
+
+    // The Sonus mark in pixels, three faders as on its app icon, in the
+    // bar's own two colours: lit under the knobs, dim over them. Muted, the
+    // faders are down.
+    SonusLogo {
+      anchors.centerIn: parent
+      unit: root.iconUnit
+      color: root.barFg
+      dimColor: Qt.darker(root.barFg, 1.55)
+      muted: !!(root.service && root.service.masterMuted)
     }
-    tooltipText: {
-      var s = root.service
-      if (!s || !s.engineUp) return "Sonus"
-      var lines = [(s.outputLabel || (s.master ? s.master.description : "Output")) + "  "
-        + (s.masterMuted ? "muted" : Math.round(s.masterVolume * 100) + "%")]
-      if (s.status) lines.push(s.status)
-      if (s.updateAvailable) lines.push("Update available")
-      return lines.join("\n")
-    }
+
     onPressed: function(b) {
       if (b === Qt.MiddleButton) { if (root.service) root.service.toggleMasterMute() }
       else if (b === Qt.RightButton) {
@@ -543,6 +632,65 @@ Panel {
       root.wheelVolume("master", delta)
       root.showVolumeOsd(root.service.volumeOf("master"))
     }
+  }
+
+  readonly property bool vertical: bar ? bar.vertical : false
+
+  // The hover card: after the shell's tooltip delay, gone the moment the
+  // pointer leaves or the panel opens.
+  readonly property var hoverRows: {
+    var s = service
+    if (!s || !s.engineUp) return []
+    s.appsVersion
+    var out = (s.outputs || []).filter(function(d) { return d && d.active })[0]
+    var inn = (s.inputs || []).filter(function(d) { return d && d.active })[0]
+    var live = s.channels || {}
+    var volumes = {}, muted = {}
+    var keys = ["master", "input", "game", "chat", "media", "aux"]
+    for (var i = 0; i < keys.length; i++) {
+      if (!live[keys[i]]) continue
+      volumes[keys[i]] = s.volumeOf(keys[i])
+      muted[keys[i]] = s.mutedOf(keys[i])
+    }
+    return Model.hoverRows({
+      output: live.master ? { label: s.outputLabel || (out ? out.label : ""), form: out ? out.form : s.outputForm } : null,
+      input: live.input && inn ? { label: inn.label, form: inn.form } : null,
+      volumes: volumes,
+      muted: muted,
+      channels: categories.filter(function(c) { return !!live[c.key] })
+        .map(function(c) { return { key: c.key, title: c.title, eq: eqActive(c.key) } })
+    })
+  }
+  readonly property string hoverNote: {
+    var s = service
+    if (!s) return ""
+    var lines = []
+    if (s.status) lines.push(s.status)
+    if (s.updateAvailable) lines.push("Update available")
+    return lines.join(" \u00B7 ")
+  }
+  readonly property bool cardWanted: button.tooltipHovered && !opened && hoverRows.length > 0
+  property bool cardShown: false
+  onCardWantedChanged: if (!cardWanted) cardShown = false
+
+  Timer {
+    interval: 400
+    running: root.cardWanted && !root.cardShown
+    onTriggered: {
+      paletteFile.reload()
+      root.cardShown = true
+    }
+  }
+
+  HoverCard {
+    target: button
+    bar: root.bar
+    shown: root.cardShown
+    rows: root.hoverRows
+    note: root.hoverNote
+    palette: root.palette
+    unit: root.pixelUnit
+    fontFamily: button.fontFamily
   }
 
   // ---- panel --------------------------------------------------------------------
@@ -587,11 +735,12 @@ Panel {
         else if (key === "vol:out") root.toggleDevices("sink")
         else if (key === "vol:in") root.toggleDevices("src")
         else if (key.indexOf("app:") === 0) root.toggleMenu(root.cursorTarget())
-        else if (key.indexOf("ch:") === 0) root.openEq(root.cursorTarget())
+        else if (key.indexOf("ch:") === 0) root.toggleChannel(root.cursorTarget())
       }
       onCloseRequested: {
         if (root.dragKey !== "") root.endDrag()
         else if (root.menuKey !== "") root.menuKey = ""
+        else if (root.openChannel !== "") root.openChannel = ""
         else if (root.openDevices !== "") {
           var opener = root.openDevices === "sink" ? "vol:out" : "vol:in"
           root.openDevices = ""
@@ -641,71 +790,80 @@ Panel {
           clip: true
           interactive: contentHeight > height && root.dragKey === ""
           boundsBehavior: Flickable.StopAtBounds
+          opacity: root.pageFade
+          transform: Translate { x: root.view === "mixer" ? root.pageShift : 0 }
 
           Column {
             id: mixerColumn
             width: flick.width
-            spacing: root.tileGap
+            spacing: root.roomGap
 
             Column {
               width: parent.width
 
-              // The top row: the title in the first column, over Game, and the
-              // output and input filling the rest. No empty header above them.
+              // The top row: the title in a room of its own over Game, then
+              // the output and the input sharing the rest. Device names run
+              // long, so each gets half of it rather than a channel's column.
+              // No empty header above them.
               Row {
                 id: topRow
-                readonly property real deviceWidth: root.hasInput
-                  ? (width - channelRow.tileWidth - root.tileGap * 2) / 2
-                  : width - channelRow.tileWidth - root.tileGap
-                readonly property real rowHeight: Math.max(topHero.implicitHeight, outputTile.implicitHeight,
+                readonly property real outputWidth: root.hasInput
+                  ? (width - channelRow.tileWidth - root.roomGap * 2) / 2
+                  : width - channelRow.tileWidth - root.roomGap
+                readonly property real rowHeight: Math.max(heroRoom.implicitHeight, outputTile.implicitHeight,
                   inputTile.visible ? inputTile.implicitHeight : 0)
                 width: parent.width
-                spacing: root.tileGap
+                spacing: root.roomGap
 
-                HeroBlock {
-                  id: topHero
+                Room {
+                  id: heroRoom
                   width: channelRow.tileWidth
                   height: topRow.rowHeight
                   host: root
-                  title: "Sonus"
-                  line: root.heroLine
-                  lineOpacity: root.captionOpacity
-                  iconComponent: Component {
-                    Item {
-                      SonusMark {
-                        anchors.centerIn: parent
-                        width: Math.round(Style.font.display / 2) * 2
-                        height: width
-                        color: root.fg
-                        muted: !!(root.service && root.service.masterMuted)
-                      }
-                    }
-                  }
+                  tone: root.toneFor("")
+                  clickable: false
+                  delay: 0
+                  naturalHeight: topHero.implicitHeight
 
-                  PanelActionButton {
-                    iconText: Glyphs.cog
-                    tooltipText: "Settings (s)"
-                    foreground: root.fg
-                    fontFamily: root.fontFamily
-                    onClicked: root.setView("settings")
+                  HeroBlock {
+                    id: topHero
+                    width: parent.width
+                    height: heroRoom.height - heroRoom.pad * 2
+                    host: root
+                    logo: true
+                    muted: !!(root.service && root.service.masterMuted)
+                    markSize: Math.round(Style.font.display * 1.5)
+                    title: "Sonus"
+                    line: root.heroLine
+                    instant: root.heroInstant
+
+                    PixelButton {
+                      icon: "settings-cog"
+                      angle: Math.round(root.gearTurn * -2) * 45
+                      tooltipText: "Settings (s)"
+                      foreground: root.fg
+                      fontFamily: root.fontFamily
+                      onClicked: root.setView("settings")
+                    }
                   }
                 }
 
                 DeviceTile {
                   id: outputTile
-                  width: topRow.deviceWidth
+                  width: topRow.outputWidth
                   height: topRow.rowHeight
                   host: root
                   section: "sink"
                   key: "master"
                   cursor: "vol:out"
                   role: "Output"
+                  delay: 70
                 }
 
                 DeviceTile {
                   id: inputTile
                   visible: root.hasInput
-                  width: topRow.deviceWidth
+                  width: topRow.outputWidth
                   height: topRow.rowHeight
                   host: root
                   section: "src"
@@ -713,38 +871,38 @@ Panel {
                   cursor: "vol:in"
                   role: "Input"
                   mic: true
-                  metered: true
                   peak: inputPeakMonitor.peak
+                  delay: 140
                 }
               }
 
-              // Slides open between the devices and the channels, so the tiles
-              // below are pushed gently instead of jumping. Its gap above is part
-              // of its height, so closing ends without a snap.
+              // Slides open between the devices and the channels, so the rooms
+              // below are pushed gently instead of jumping. Its gap above is
+              // part of its height, so closing ends without a snap.
               Item {
                 id: deviceDrawer
                 readonly property bool isOpen: root.openDevices !== ""
                 clip: true
                 width: parent.width
-                height: isOpen ? deviceList.implicitHeight + root.tileGap : 0
+                height: isOpen ? deviceList.implicitHeight + root.roomGap : 0
                 opacity: isOpen ? 1 : 0
 
                 Behavior on height {
                   NumberAnimation {
-                    duration: Style.duration(deviceDrawer.isOpen ? 180 : 120)
+                    duration: Style.duration(deviceDrawer.isOpen ? 280 : 200)
                     easing.type: Easing.OutCubic
                   }
                 }
                 Behavior on opacity {
                   NumberAnimation {
-                    duration: Style.duration(deviceDrawer.isOpen ? 180 : 120)
+                    duration: Style.duration(deviceDrawer.isOpen ? 220 : 160)
                     easing.type: Easing.OutCubic
                   }
                 }
 
                 DeviceList {
                   id: deviceList
-                  y: root.tileGap
+                  y: root.roomGap
                   width: parent.width
                   host: root
                   section: root.shownDevices
@@ -752,51 +910,58 @@ Panel {
               }
             }
 
-            // One row, every tile as tall as the tallest, so the buckets line
+            // One row, every room as tall as the tallest, so the buckets line
             // up along the bottom and a drop never has far to go.
             Row {
               id: channelRow
-              readonly property real tileWidth: (width - root.tileGap * 3) / 4
+              readonly property real tileWidth: (width - root.roomGap * 3) / 4
               readonly property real tileHeight: Math.max(gameTile.implicitHeight, chatTile.implicitHeight,
                 mediaTile.implicitHeight, auxTile.implicitHeight)
               width: parent.width
-              spacing: root.tileGap
+              spacing: root.roomGap
 
-              ChannelTile { id: gameTile; width: channelRow.tileWidth; height: channelRow.tileHeight; host: root; key: "game"; title: "Game" }
-              ChannelTile { id: chatTile; width: channelRow.tileWidth; height: channelRow.tileHeight; host: root; key: "chat"; title: "Chat" }
-              ChannelTile { id: mediaTile; width: channelRow.tileWidth; height: channelRow.tileHeight; host: root; key: "media"; title: "Media" }
-              ChannelTile { id: auxTile; width: channelRow.tileWidth; height: channelRow.tileHeight; host: root; key: "aux"; title: "Aux" }
+              ChannelTile { id: gameTile; width: channelRow.tileWidth; height: channelRow.tileHeight; host: root; key: "game"; title: "Game"; delay: 210 }
+              ChannelTile { id: chatTile; width: channelRow.tileWidth; height: channelRow.tileHeight; host: root; key: "chat"; title: "Chat"; delay: 280 }
+              ChannelTile { id: mediaTile; width: channelRow.tileWidth; height: channelRow.tileHeight; host: root; key: "media"; title: "Media"; delay: 350 }
+              ChannelTile { id: auxTile; width: channelRow.tileWidth; height: channelRow.tileHeight; host: root; key: "aux"; title: "Aux"; delay: 420 }
             }
 
             NoChannelTile {
               id: directTile
               visible: apps.length > 0 || root.dragKey !== ""
               width: parent.width
-              height: implicitHeight
               host: root
               labelWidth: channelRow.tileWidth
+              delay: 490
             }
 
             // What the engine has to say (a restored device mix, a failed
             // write), the desktop app in the way, an update: the panel kit's
-            // banners, under the tiles so a banner coming or going never moves
+            // banners, under the rooms so a banner coming or going never moves
             // a fader out from under the pointer.
-            Repeater {
-              model: root.notices
+            Column {
+              width: parent.width
+              spacing: Style.space(6)
+              topPadding: visible ? Style.space(5) : 0
+              visible: root.notices.length > 0
 
-              Notice {
-                required property var modelData
-                width: mixerColumn.width
-                icon: modelData.icon
-                text: modelData.text
-                tone: modelData.tone
-                actionLabel: modelData.actionLabel || ""
-                busy: !!modelData.busy
-                dismissable: !!modelData.dismissable
-                foreground: root.fg
-                fontFamily: root.fontFamily
-                onActioned: root.noticeAction(modelData)
-                onDismissed: root.dismissNotice(modelData)
+              Repeater {
+                model: root.notices
+
+                Notice {
+                  required property var modelData
+                  width: mixerColumn.width
+                  icon: modelData.icon
+                  text: modelData.text
+                  tone: modelData.tone
+                  actionLabel: modelData.actionLabel || ""
+                  busy: !!modelData.busy
+                  dismissable: !!modelData.dismissable
+                  foreground: root.fg
+                  fontFamily: root.fontFamily
+                  onActioned: root.noticeAction(modelData)
+                  onDismissed: root.dismissNotice(modelData)
+                }
               }
             }
           }
@@ -808,6 +973,8 @@ Panel {
           host: root
           width: parent.width
           visible: root.view === "eq"
+          opacity: root.pageFade
+          transform: Translate { x: root.view === "eq" ? root.pageShift : 0 }
         }
 
         SettingsView {
@@ -815,23 +982,34 @@ Panel {
           host: root
           width: parent.width
           visible: root.view === "settings"
+          opacity: root.pageFade
+          transform: Translate { x: root.view === "settings" ? root.pageShift : 0 }
         }
 
         // The card in the air, following the pointer: the same grip, icon
-        // and name as in its tile, and where it will land.
-        BorderSurface {
+        // and name as in its room, tinted in the tone of where it would land.
+        Rectangle {
+          id: ghost
+          readonly property color tone: root.toneFor(root.dropTarget === "master" ? "" : root.dropTarget)
           visible: root.dragKey !== ""
           x: Math.max(0, Math.min(root.dragX - Style.space(14), stage.width - width))
           y: root.dragY - height / 2
           width: ghostRow.implicitWidth + Style.space(20)
-          height: Style.space(28)
+          height: Math.max(Style.space(28), ghostRow.implicitHeight + Style.space(8))
           radius: Style.cornerRadius
           color: Commons.Color.popups.background
-          borderSpec: Border.controlSpec(root.dropTarget !== "" ? "selected" : "hover-cursor", root.fg, Commons.Color.accent)
+          border.width: Math.max(1, Style.space(1))
+          border.color: root.dropTarget !== "" ? Qt.rgba(tone.r, tone.g, tone.b, 0.8) : root.dim
+
+          Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: root.dropTarget !== "" ? Qt.rgba(ghost.tone.r, ghost.tone.g, ghost.tone.b, 0.14) : "transparent"
+          }
 
           Row {
             id: ghostRow
-            x: Style.space(6)
+            x: Style.space(8)
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(6)
 
@@ -850,13 +1028,17 @@ Panel {
               sourceSize.height: height * 2
             }
 
+            // A long name wraps rather than running past the panel.
             Text {
               anchors.verticalCenter: parent.verticalCenter
+              width: Math.min(implicitWidth, Style.space(240))
+              wrapMode: Text.Wrap
               textFormat: Text.PlainText
               text: root.dragName
               color: root.fg
               font.family: root.fontFamily
-              font.pixelSize: Style.font.body
+              font.pixelSize: Style.font.bodySmall
+              font.bold: true
             }
 
             Text {

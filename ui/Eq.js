@@ -44,6 +44,17 @@ function isFlat(state) {
   return true
 }
 
+// The preset a curve is, or "" for one of your own.
+function presetName(gains) {
+  for (var i = 0; i < PRESETS.length; i++) {
+    var p = PRESETS[i]
+    var same = true
+    for (var j = 0; j < BAND_COUNT; j++) if (Math.abs(p.gains[j] - (Number(gains && gains[j]) || 0)) > 0.01) same = false
+    if (same) return p.name
+  }
+  return ""
+}
+
 // Partial make-up gain: pull the preamp down by half the peak boost. Full
 // compensation made a Bass preset quieter than flat, which read as "the EQ
 // does nothing".

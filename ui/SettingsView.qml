@@ -5,8 +5,9 @@ import qs.Ui
 import "Glyphs.js" as Glyphs
 
 // Omarchy has no settings screen for plugin widgets, so the panel is it.
-// Laid out like the other plugins' settings: the hero with a way back, then
-// sections from the panel kit, ending in About and updates.
+// The rooms' hero with a way back, then sections from the panel kit, as the
+// other plugins lay out their settings, ending in About and updates. The
+// kit's icons come out as pixel art through Glyph.qml.
 Column {
   id: view
 
@@ -45,28 +46,22 @@ Column {
     return "Not checked yet"
   }
 
-  PanelHero {
+  HeroBlock {
+    id: hero
     width: parent.width
+    host: view.host
+    logo: true
+    muted: !!(view.service && view.service.masterMuted)
     title: "Settings"
-    meta: "Changes save as you make them"
-    foreground: view.host.fg
-    fontFamily: view.host.fontFamily
-    iconComponent: Component {
-      SonusMark {
-        width: Style.font.display
-        height: width
-        color: view.host.fg
-        muted: !!(view.service && view.service.masterMuted)
-      }
-    }
-    trailingControl: Component {
-      PanelActionButton {
-        iconText: Glyphs.back
-        tooltipText: "Back to the mixer (esc)"
-        foreground: view.host.fg
-        fontFamily: view.host.fontFamily
-        onClicked: view.host.setView("mixer")
-      }
+    line: "Changes save as you make them"
+
+    PixelButton {
+      icon: "arrow-left"
+      nudge: Math.round(view.host.gearTurn * 2)
+      tooltipText: "Back to the mixer (esc)"
+      foreground: view.host.fg
+      fontFamily: view.host.fontFamily
+      onClicked: view.host.setView("mixer")
     }
   }
 
@@ -174,6 +169,7 @@ Column {
   PanelSeparator { foreground: view.host.fg }
 
   UpdateSection {
+    icon: Glyphs.update
     name: "Sonus"
     version: view.service ? view.service.version : ""
     line: view.updateLine

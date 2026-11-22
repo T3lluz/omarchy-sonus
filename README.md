@@ -4,25 +4,27 @@
   <p>A Sonar-style mixer for <b>PipeWire</b> that drops down from the Omarchy bar:<br/>
   system output and input, <b>Game, Chat, Media and Aux</b> channels, a saved mix per device, and a 10-band EQ.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v1.7.1-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.8.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-a58bff" />
     <img alt="PipeWire" src="https://img.shields.io/badge/PipeWire-filter--chain-a58bff" />
     <a href="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml/badge.svg" /></a>
     <img alt="License" src="https://img.shields.io/badge/license-MIT-34413e" />
   </p>
   <p><a href="#install"><b>Install</b></a> · <a href="#features">Features</a> · <a href="#use">Use</a> · <a href="#how-it-works">How it works</a></p>
-  <img src="assets/preview.png" width="640" alt="The Sonus panel: output and input beside the title, then the four channels in a row with the apps playing in them" />
+  <img src="assets/preview.png" width="640" alt="The Sonus panel: the title, output and input rooms in a row, then Game, Chat, Media and Aux as rooms in their own colours, each with its volume in big block digits over a meter of cells and the apps playing in it" />
 </div>
 
 ## Features
 
-- **Output and input:** each has a tile with the system volume and mute. Click a tile's name to list every device of that kind; choosing an output switches the system to it. The microphone also shows a live meter.
+- **Rooms:** every device and channel is a room in a colour of its own from your theme, its volume in big block digits over a meter of ten cells. The meter is the fader: click or drag across it. Icons are pixel art, sharp at any scale (apps keep their own), and the panel comes alive when it opens (rooms rise in, meters fill, the mark's faders slide up, the title's prompt types itself out), then holds still. The bar icon is the same mark; muted, its faders are down.
+- **Output and input:** each has a room with the system volume and mute. Click it to list every device of that kind; choosing an output switches the system to it. The microphone's meter lights up with what it hears.
 - **A mix per device:** AirPods keep one volume and equalizer, the laptop speakers keep another. The first time a device is used it starts from the mix you already have; after that, coming back restores it.
-- **See where the sound goes:** every channel tile says where it plays ("To AirPods Pro"). The device in use has its own icon (laptop, headphones, headset, AirPods and other earbuds, speaker, monitor). Switching outputs, whether from a keybinding, a cable or Bluetooth, shows a toast with the device's icon and name. Scrolling on the bar icon shows the same icon in the volume toast.
-- **Channels:** Game, Chat, Media and Aux are real PipeWire sinks, each with its own volume and mute, all mixed into the selected output. Each channel is a tile in a row of four, with its fader on top and a bucket of the apps playing into it along the bottom.
-- **Routing:** every app is a card with a grip. Drag it to another channel's bucket, or click it and pick a channel's icon. While you drag, every tile shows where it can land, and a **No channel** strip takes apps that should skip the channels. Routes are remembered and enforced whenever the app starts playing again, panel open or not.
+- **See where the sound goes:** the output room names the device in use and how many others there are. It has its own icon (laptop, headphones, headset, AirPods and other earbuds, speaker, monitor). Switching outputs, whether from a keybinding, a cable or Bluetooth, shows a toast with the device's icon and name. Scrolling on the bar icon shows the same icon in the volume toast.
+- **Channels:** Game, Chat, Media and Aux are real PipeWire sinks, each with its own volume and mute, all mixed into the selected output. Each channel is a room in a row of four, with its fader on top and a bucket of the apps playing into it along the bottom. Click a channel to switch its EQ on or off, or to edit the curve.
+- **Routing:** every app is a card with a grip and its own icon, in its channel's colour. Drag it to another channel's bucket, or click it and pick a channel. While you drag, every room shows where it can land, and a **No channel** strip takes apps that should skip the channels. Routes are remembered and enforced whenever the app starts playing again, panel open or not.
 - **EQ per channel:** ten octave bands from 32 Hz to 16 kHz with a preamp, presets (Flat, Bass, Voice, Treble, Steps), a smooth curve through the faders, and a bypass switch. Changes apply to the running graph with no gap. The curve is saved with the output device.
-- **Keyboard first:** every row, fader and band is reachable without the mouse.
+- **Keyboard first:** every room, fader and band is reachable without the mouse.
+- **A card on hover:** resting the pointer on the bar icon shows the output, the input and each channel with its level.
 - **No gap on reload:** the channels run as the user unit `sonus-graph.service`, so a shell restart or plugin reload adopts the running graph instead of rebuilding it.
 - **Updates from the panel:** Settings says when a new version is on GitHub, what changed, and installs it with one click. Edits you made in the plugin folder are set aside with `git stash`, not lost (and dropped when they already are the new version), a notification says when it is done, and the shell restarts to draw the new panel.
 - **Plays well with EasyEffects:** channel outputs land in EasyEffects when it runs, and Sonus keeps it from EQ-ing twice or stealing streams.
@@ -45,16 +47,17 @@ Needs PipeWire with `pipewire-pulse` (Omarchy's default): `pw-dump`, `pw-cli`, `
 | `Ctrl+Alt+V` | Open / close the panel |
 | Click the bar icon | Open the panel |
 | Scroll / middle-click the icon | Output volume / mute |
-| Click the output's or input's name | List the devices |
+| Click the output or input room | List the devices |
 | Click an output | Use that device, and its saved volume and EQ |
 | Click an input | Use that microphone |
 | Right-click the icon | Settings |
-| Drag an app's card to another tile | Move it to that channel (or to **No channel**) |
+| Click or drag across a meter | Set that volume; right-click mutes |
+| Drag an app's card to another room | Move it to that channel (or to **No channel**) |
 | Click an app's card | Pick a channel from a row of icons |
-| Click the speaker beside a fader | Mute it |
-| **EQ** on a channel's tile (lit when it shapes the sound) | That channel's EQ |
+| Click the speaker beside a meter | Mute it |
+| Click a channel's room | Its EQ: on or off, and **Edit the curve** |
 | `j`/`k`, `h`/`l` | Move, volume |
-| `enter` | Show the devices, pick one, open a channel's EQ or an app's channels |
+| `enter` | Open the room under the cursor: the devices, a channel's EQ, an app's channels |
 | `m`, `e`, `1`–`4` / `0`, `s`, `esc` | Mute, EQ, assign / unassign, settings, back |
 | In the EQ: `h`/`l`, `j`/`k`, `0`, `p` | Pick a band, move it, zero it, next preset |
 
@@ -85,11 +88,12 @@ Stop the channels with `python3 -I bin/sonus-engine --stop-graph`.
 ```bash
 node tests/eq.test.js
 node tests/audio.test.js
+node tests/model.test.js
 python3 -B -m unittest discover tests
 omarchy restart shell    # pick up QML changes
 ```
 
-The tests check that the panel's EQ model (`ui/Eq.js`) and the engine's (`engine/sonus/eq.py`) agree on the band layout, and that every device shape the engine reports has an icon. See [AGENTS.md](AGENTS.md) for how the pieces fit.
+The tests check that the panel's EQ model (`ui/Eq.js`) and the engine's (`engine/sonus/eq.py`) agree on the band layout, that every device shape the engine reports has an icon, and that every pixel icon the panel names exists. `python3 scripts/fetch-pixel-icons.py` rebuilds the icons from Pixelarticons. See [AGENTS.md](AGENTS.md) for how the pieces fit.
 
 ## License
 

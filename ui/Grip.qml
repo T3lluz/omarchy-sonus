@@ -1,25 +1,29 @@
 import QtQuick
+import QtQuick.Window
 import qs.Commons
 import qs.Commons as Commons
 
-// Three rows of two dots: the usual sign for "drag me". Drawn rather than a
-// font glyph, which at this size comes out too faint to notice.
+// Three rows of two dots: the usual sign for "drag me". Square dots on whole
+// device pixels, as the pixel icons are drawn, and big enough to notice.
 Grid {
   id: grip
 
   property color color: Commons.Color.foreground
 
+  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  readonly property real dot: Math.max(2, Math.round(Style.space(2) * dpr)) / dpr
+
   columns: 2
-  spacing: Style.space(2)
+  spacing: grip.dot
 
   Repeater {
     model: 6
 
     Rectangle {
-      width: Math.max(2, Style.space(2))
-      height: width
-      radius: width / 2
+      width: grip.dot
+      height: grip.dot
       color: grip.color
+      antialiasing: false
     }
   }
 }

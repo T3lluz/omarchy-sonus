@@ -2,13 +2,12 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
-import "Glyphs.js" as Glyphs
+import "Model.js" as Model
 
-// Every output or input, once a device tile opens it, as small tiles on the
-// same four columns as the channels below: each icon sits over a channel's icon
-// and each name over its name. The way Omarchy's network panel offers its DNS
-// and Wi-Fi band choices, the one in use is filled and the rest are quiet.
-// Clicking another switches to it.
+// Every output or input, once a device room opens it, as small rooms on the
+// same four columns as the channels below, in the devices' tone. The one in
+// use is tinted deeper and carries a check in a column of its own; the rest
+// are quiet. Clicking another switches to it.
 Grid {
   id: list
 
@@ -16,72 +15,75 @@ Grid {
   property string section: ""
 
   readonly property var devices: section === "" ? [] : host.devices(section)
+  readonly property color tone: host.toneFor(section === "src" ? "input" : "master")
   readonly property real cellWidth: (width - columnSpacing * (columns - 1)) / columns
-  // Every tile as tall as the tallest name, so a long one keeps the rows even.
-  property real tallestName: 0
+  // Every tile as tall as the tallest name in its row, so a long one keeps
+  // its row even without stretching the others.
+  property var rowNames: []
   onDevicesChanged: Qt.callLater(measure)
 
   function measure() {
-    var tallest = 0
+    var rows = []
     for (var i = 0; i < picks.count; i++) {
       var pick = picks.itemAt(i)
-      if (pick) tallest = Math.max(tallest, pick.nameHeight)
+      var r = Math.floor(i / columns)
+      rows[r] = Math.max(rows[r] || 0, pick ? pick.nameHeight : 0)
     }
-    tallestName = tallest
+    rowNames = rows
   }
 
-  readonly property real cellHeight: Math.max(tallestName, host.iconCol) + Style.space(6)
+  function cellHeight(index) {
+    return Math.max(rowNames[Math.floor(index / columns)] || 0, host.iconColumn) + Style.space(14)
+  }
 
   columns: 4
-  columnSpacing: host.tileGap
-  rowSpacing: host.tileGap
+  columnSpacing: host.roomGap
+  rowSpacing: host.roomGap
 
   Repeater {
     id: picks
     model: list.devices
 
-    CursorSurface {
+    Rectangle {
       id: pick
       required property var modelData
+      required property int index
       readonly property string pickKey: list.section + ":" + modelData.name
       readonly property bool keyed: list.host.cursorActive && list.host.cursorKey === pickKey
+      readonly property bool lit: list.host.cursorKey === pickKey
+      readonly property bool current: !!modelData.active
       readonly property real nameHeight: pickName.implicitHeight
 
       width: list.cellWidth
-      height: list.cellHeight
+      height: list.cellHeight(index)
+      radius: Style.cornerRadius
+      color: Qt.rgba(list.tone.r, list.tone.g, list.tone.b, current ? 0.17 : lit ? 0.11 : 0.065)
+      border.width: keyed ? Math.max(1, Style.space(1)) : 0
+      border.color: Qt.rgba(list.tone.r, list.tone.g, list.tone.b, 0.6)
       onKeyedChanged: if (keyed) list.host.ensureVisible(pick)
 
-      // From the panel's one cursor, not the tile's own hover, so the pointer
-      // and the keyboard never light two at once.
-      hasCursor: list.host.cursorKey === pickKey
-      current: !!modelData.active
-      foreground: list.host.fg
-      color: hasCursor ? fill : current ? currentFill : Style.normalFillFor(foreground, accent)
+      Behavior on color { ColorAnimation { duration: Style.duration(140) } }
 
-      Text {
+      PixelIcon {
         id: pickIcon
-        x: list.host.tilePad
-        width: list.host.iconCol
+        x: list.host.roomPad + Math.round((Style.font.title - width) / 2)
         anchors.verticalCenter: parent.verticalCenter
-        horizontalAlignment: Text.AlignHCenter
-        textFormat: Text.PlainText
-        text: Glyphs.deviceGlyph(pick.modelData.form)
-        color: pick.current || pick.hasCursor ? list.host.fg : list.host.dim
-        font.family: list.host.fontFamily
-        font.pixelSize: Style.font.title
+        name: Model.devicePixel(pick.modelData.form, list.section)
+        size: Style.font.title
+        color: pick.current || pick.lit ? list.tone : list.host.dim
       }
 
       Text {
         id: pickName
-        anchors.left: pickIcon.right
-        anchors.leftMargin: Style.space(4)
-        anchors.right: parent.right
+        anchors.left: parent.left
+        anchors.leftMargin: list.host.roomPad + Style.font.title + Style.space(8)
+        anchors.right: check.left
         anchors.rightMargin: Style.space(6)
         anchors.verticalCenter: parent.verticalCenter
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
         text: pick.modelData.label || "Unknown"
-        color: pick.current || pick.hasCursor ? list.host.fg : list.host.dim
+        color: pick.current || pick.lit ? list.host.fg : list.host.dim
         font.family: list.host.fontFamily
         font.pixelSize: Style.font.body
         font.bold: pick.current
@@ -89,11 +91,24 @@ Grid {
         Component.onCompleted: Qt.callLater(list.measure)
       }
 
+      // The device in use, marked as well as tinted, in a column every tile
+      // keeps so the names line up.
+      PixelIcon {
+        id: check
+        anchors.right: parent.right
+        anchors.rightMargin: list.host.roomPad
+        anchors.verticalCenter: parent.verticalCenter
+        name: "check"
+        size: Style.font.bodySmall
+        color: list.tone
+        opacity: pick.current ? 1 : 0
+      }
+
       MouseArea {
         id: pickMouse
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: pick.modelData.active ? Qt.ArrowCursor : Qt.PointingHandCursor
+        cursorShape: pick.current ? Qt.ArrowCursor : Qt.PointingHandCursor
         onPositionChanged: list.host.pointAt(pick.pickKey)
         onEntered: list.host.pointAt(pick.pickKey)
         onExited: if (!list.host.cursorActive && list.host.cursorKey === pick.pickKey) list.host.cursorKey = ""
@@ -101,7 +116,7 @@ Grid {
       }
 
       PanelToolTip {
-        visible: pickMouse.containsMouse && !pick.modelData.active
+        visible: pickMouse.containsMouse && !pick.current
         text: (list.section === "sink" ? "Play through " : "Record from ") + (pick.modelData.label || "this device")
         fontFamily: list.host.fontFamily
       }

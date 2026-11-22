@@ -378,7 +378,7 @@ Scope {
     var out = []
     for (var i = 0; i < appsModel.count; i++) {
       var row = appsModel.get(i)
-      if (effectiveChannel(row.key, row.channel) === channel) out.push({ key: row.key, name: row.name, icon: row.icon })
+      if (effectiveChannel(row.key, row.channel) === channel) out.push({ key: row.key, name: row.name, icon: row.icon, binary: row.binary })
     }
     return out
   }

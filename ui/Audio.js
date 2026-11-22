@@ -35,15 +35,23 @@ function othersLine(count, section) {
   return count === 1 ? "1 other " + noun : count + " other " + noun + "s"
 }
 
-// The line under a channel's name: where it plays, until there is something
-// more pressing to say about it.
-// A name too long for the tile gives way, since the output's own tile shows it
-// in full. `managed` is the setting: channels can also be missing while the
-// graph starts up, and then "off in settings" would send you to the wrong place.
-function channelLine(present, managed, muted, outputLabel) {
+// The line under a channel's name: how many apps play in it, until there is
+// something more pressing to say. Where it plays is the output room's to say.
+// `managed` is the setting: channels can also be missing while the graph
+// starts up, and then "off in settings" would send you to the wrong place.
+function channelState(present, managed, muted, appCount) {
   if (!present) return managed ? "Not running" : "Off in settings"
   if (muted) return "Muted"
-  return toOutput(outputLabel)
+  if (!(appCount > 0)) return "No apps"
+  return appCount === 1 ? "1 app" : appCount + " apps"
+}
+
+// The line under a device's name: what it is to Sonus, then muted or how
+// many others there are to switch to.
+function deviceState(role, muted, others, section) {
+  if (muted) return role + " \u00B7 muted"
+  if (others > 0) return role + " \u00B7 " + others + " more"
+  return role
 }
 
 var LINE_LIMIT = 30

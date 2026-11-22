@@ -4,10 +4,11 @@ import qs.Commons as Commons
 import qs.Ui
 import "Audio.js" as Audio
 import "Eq.js" as Eq
-import "Glyphs.js" as Glyphs
+import "Model.js" as Model
 
-// A category's 10-band equalizer: presets, the bands over the live response
-// of the whole chain, and the preamp. load() points it at a category.
+// A channel's 10-band equalizer, in that channel's tone: presets, the bands
+// over the live response of the whole chain in a room of its own, and the
+// preamp. load() points it at a channel.
 Column {
   id: view
 
@@ -23,6 +24,8 @@ Column {
   property int hoverBand: -1
 
   spacing: Style.space(12)
+
+  readonly property color tone: host.toneFor(key)
 
   function state() { return { enabled: eqEnabled, preamp: preamp, gains: gains.slice() } }
 
@@ -47,6 +50,7 @@ Column {
     }
     band = -1
     loading = false
+    if (entrance) eqHero.tick++
     curve.requestPaint()
   }
 
@@ -79,15 +83,7 @@ Column {
     }
   }
 
-  readonly property string presetName: {
-    for (var i = 0; i < Eq.PRESETS.length; i++) {
-      var p = Eq.PRESETS[i]
-      var same = true
-      for (var j = 0; j < Eq.BAND_COUNT; j++) if (Math.abs(p.gains[j] - gains[j]) > 0.01) same = false
-      if (same) return p.name
-    }
-    return ""
-  }
+  readonly property string presetName: Eq.presetName(gains)
 
   // Keyboard: h/l pick a band, j/k move it, 0 zeroes it, p cycles presets.
   function handleMove(dx, dy) {
@@ -120,23 +116,16 @@ Column {
       width: (parent.width - view.host.tileGap * 3) / 4
       anchors.verticalCenter: parent.verticalCenter
       host: view.host
+      icon: Model.channelPixel(view.key)
+      iconColor: view.tone
+      story: Model.storyOf(view.key)
+      instant: view.band >= 0 || view.hoverBand >= 0
       title: view.title + " EQ"
       // Reads out the band being touched, then goes back to the curve.
       line: {
         var b = view.band >= 0 ? view.band : view.hoverBand
         if (b >= 0) return Eq.BAND_LABELS[b] + " Hz, " + Eq.dbText(view.gains[b] || 0)
         return Audio.eqLine(view.eqEnabled, view.presetName, view.gains, view.preamp)
-      }
-      iconComponent: Component {
-        Text {
-          horizontalAlignment: Text.AlignHCenter
-          verticalAlignment: Text.AlignVCenter
-          textFormat: Text.PlainText
-          text: Glyphs.channel(view.key)
-          color: view.host.fg
-          font.family: view.host.fontFamily
-          font.pixelSize: Style.font.display
-        }
       }
     }
 
@@ -165,6 +154,7 @@ Column {
         anchors.verticalCenter: parent.verticalCenter
         checked: view.eqEnabled
         foreground: view.host.fg
+        accent: view.tone
         onToggled: {
           view.eqEnabled = !view.eqEnabled
           view.commit()
@@ -177,9 +167,10 @@ Column {
         }
       }
 
-      PanelActionButton {
+      PixelButton {
         anchors.verticalCenter: parent.verticalCenter
-        iconText: Glyphs.back
+        icon: "arrow-left"
+        nudge: Math.round(view.host.gearTurn * 2)
         tooltipText: "Back to the mixer (esc)"
         foreground: view.host.fg
         fontFamily: view.host.fontFamily
@@ -190,9 +181,18 @@ Column {
 
   // ---- bands ----------------------------------------------------------------
 
+  // The bands in a room of the channel's tone.
+  Rectangle {
+    width: parent.width
+    height: bandArea.height + view.host.roomPad * 2
+    radius: Style.cornerRadius
+    color: Qt.rgba(view.tone.r, view.tone.g, view.tone.b, 0.065)
+
   Item {
     id: bandArea
-    width: parent.width
+    x: view.host.roomPad
+    y: view.host.roomPad
+    width: parent.width - x * 2
     height: Style.space(180)
 
     readonly property real labelW: Style.space(26)
@@ -247,7 +247,7 @@ Column {
           var db = series ? series[k] : 0
           pts.push([col * (octave + 0.5), yFor(db)])
         }
-        var tone = view.eqEnabled ? Commons.Color.accent : fg
+        var tone = view.eqEnabled ? view.tone : fg
         ctx.beginPath()
         ctx.moveTo(pts[0][0], mid)
         for (var p = 0; p < pts.length; p++) ctx.lineTo(pts[p][0], pts[p][1])
@@ -296,6 +296,7 @@ Column {
         width: Math.min(bandArea.col, Style.space(30))
         height: bandArea.bottomY - bandArea.topY
         foreground: view.host.fg
+        tone: view.tone
         background: Commons.Color.popups.background
         dimmed: !view.eqEnabled
         hasCursor: view.band === index
@@ -350,19 +351,25 @@ Column {
     }
   }
 
+  }
+
   // ---- preamp -----------------------------------------------------------------
 
   Item {
     width: parent.width
     implicitHeight: Math.max(preSlider.implicitHeight, resetButton.implicitHeight)
 
-    PanelSectionHeader {
+    Text {
       id: preLabel
       anchors.left: parent.left
+      anchors.leftMargin: view.host.roomPad
       anchors.verticalCenter: parent.verticalCenter
-      text: "PREAMP"
-      foreground: view.host.fg
-      fontFamily: view.host.fontFamily
+      textFormat: Text.PlainText
+      text: "Preamp"
+      color: view.host.fg
+      opacity: 0.6
+      font.family: view.host.fontFamily
+      font.pixelSize: Style.font.bodySmall
     }
 
     PanelSlider {
@@ -395,7 +402,7 @@ Column {
       anchors.rightMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
-      text: Eq.dbText(preSlider.dragging ? preSlider.liveValue : view.preamp).toUpperCase()
+      text: Eq.dbText(preSlider.dragging ? preSlider.liveValue : view.preamp)
       color: view.host.dim
       font.family: view.host.fontFamily
       font.pixelSize: Style.font.caption

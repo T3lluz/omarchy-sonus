@@ -4,8 +4,8 @@ import qs.Commons as Commons
 import qs.Ui
 import "Eq.js" as Eq
 
-// One vertical dB fader, drawn the way PanelSlider draws a horizontal one:
-// a selected-fill track, a foreground fill growing from 0 dB, a round knob.
+// One vertical dB fader in its channel's tone: a faint track, the tone
+// growing from 0 dB, and a knob as square as the theme's corners.
 //
 // `value` is the target; `shown` is what is drawn and eases toward it, so a
 // preset or a reset glides instead of snapping. Double-click zeroes the band,
@@ -15,7 +15,8 @@ Item {
 
   property color foreground: Commons.Color.foreground
   property color background: Commons.Color.background
-  property color trackColor: Style.selectedFillFor(foreground, Commons.Color.accent)
+  property color tone: foreground
+  property color trackColor: Qt.rgba(tone.r, tone.g, tone.b, 0.14)
   property real limit: Eq.GAIN_LIMIT
   property real value: 0
   property bool dimmed: false
@@ -70,8 +71,9 @@ Item {
     y: slider.pad
     width: slider.trackW
     height: slider.span
-    radius: width / 2
+    radius: Style.cornerRadius > 0 ? width / 2 : 0
     color: slider.trackColor
+    antialiasing: false
   }
 
   Rectangle {
@@ -81,17 +83,18 @@ Item {
     y: y0
     width: slider.trackW
     height: Math.abs(slider.pos - slider.centre)
-    radius: width / 2
-    color: slider.foreground
+    radius: Style.cornerRadius > 0 ? width / 2 : 0
+    color: slider.tone
+    antialiasing: false
   }
 
   Rectangle {
     width: slider.knob
     height: slider.knob
-    radius: width / 2
-    x: (slider.width - width) / 2
-    y: slider.pos - height / 2
-    color: slider.foreground
+    radius: Style.cornerRadius > 0 ? width / 2 : 0
+    x: Math.round((slider.width - width) / 2)
+    y: Math.round(slider.pos - height / 2)
+    color: slider.tone
     border.width: Math.max(1, Style.space(2))
     border.color: slider.background
     scale: slider.hot ? 1.15 : 1

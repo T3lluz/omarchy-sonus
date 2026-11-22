@@ -21,6 +21,8 @@ jobs:
         run: node tests/eq.test.js
       - name: Audio helpers
         run: node tests/audio.test.js
+      - name: Rooms model and pixel icons
+        run: node tests/model.test.js
       - name: Shortcut bind block
         run: node tests/shortcut.test.js
       - name: Engine tests

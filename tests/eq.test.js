@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "ui", "Eq.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Eq = new Function(source + "\nreturn { BAND_FREQS, BAND_COUNT, BAND_Q, GAIN_LIMIT, PRESETS, clamp, flat, normalized, isFlat, presetPreamp, snap, gainText, dbText, responseDb, curveAt }")()
+const Eq = new Function(source + "\nreturn { BAND_FREQS, BAND_COUNT, BAND_Q, GAIN_LIMIT, PRESETS, clamp, flat, normalized, isFlat, presetPreamp, presetName, snap, gainText, dbText, responseDb, curveAt }")()
 
 // The panel's copy of the band layout must match the engine's (eq.py).
 const engine = fs.readFileSync(path.join(__dirname, "..", "engine", "sonus", "eq.py"), "utf8")
@@ -19,6 +19,11 @@ for (const p of Eq.PRESETS) {
   for (const g of p.gains) assert.ok(Math.abs(g) <= Eq.GAIN_LIMIT, p.name)
 }
 assert.ok(Eq.isFlat({ preamp: 0, gains: Eq.PRESETS[0].gains }))
+
+// A curve is named by the preset it matches, and a curve of your own by nothing.
+assert.strictEqual(Eq.presetName(Eq.PRESETS[1].gains), "Bass")
+assert.strictEqual(Eq.presetName([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), "Flat")
+assert.strictEqual(Eq.presetName([1, 0, 0, 0, 0, 0, 0, 0, 0, 0]), "")
 
 // normalized: pads, clamps, and survives junk.
 const n = Eq.normalized({ enabled: false, preamp: 40, gains: [30, -30, "x"] })

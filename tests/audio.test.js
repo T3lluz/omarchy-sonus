@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "ui", "Audio.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Audio = new Function(source + "\nreturn { volumeName, eqWord, appsLine, toOutput, othersLine, channelLine, bucketLine, movingLine, fitted, heroPhrases, dropLine, movedLine, switchedLine, eqLine }")()
+const Audio = new Function(source + "\nreturn { volumeName, eqWord, appsLine, toOutput, othersLine, channelState, deviceState, bucketLine, movingLine, fitted, heroPhrases, dropLine, movedLine, switchedLine, eqLine }")()
 
 const glyphSource = fs.readFileSync(path.join(__dirname, "..", "ui", "Glyphs.js"), "utf8").replace(/^\.pragma library\s*/, "")
 const Glyphs = new Function(glyphSource + "\nreturn { deviceGlyph, channel, speaker, chat, gamepad, music, aux, noChannel }")()
@@ -35,13 +35,21 @@ assert.strictEqual(Audio.othersLine(5, "sink"), "5 other outputs")
 assert.strictEqual(Audio.volumeName(1, false), "Concert hall")
 assert.strictEqual(Audio.volumeName(0.5, true), "Muted")
 
-// The line under a channel's name: off beats muted beats where it plays.
-assert.strictEqual(Audio.channelLine(true, true, false, "AirPods Pro"), "To AirPods Pro")
-assert.strictEqual(Audio.channelLine(true, true, true, "AirPods Pro"), "Muted")
-assert.strictEqual(Audio.channelLine(false, false, true, "AirPods Pro"), "Off in settings")
-assert.strictEqual(Audio.channelLine(false, true, false, "AirPods Pro"), "Not running")
-assert.strictEqual(Audio.channelLine(true, true, false, ""), "No output")
-assert.strictEqual(Audio.channelLine(true, true, false, "Radeon High Definition Audio Controller"), "To the output")
+// The line under a channel's name: off beats muted beats how many apps.
+assert.strictEqual(Audio.channelState(true, true, false, 2), "2 apps")
+assert.strictEqual(Audio.channelState(true, true, false, 1), "1 app")
+assert.strictEqual(Audio.channelState(true, true, false, 0), "No apps")
+assert.strictEqual(Audio.channelState(true, true, true, 2), "Muted")
+assert.strictEqual(Audio.channelState(false, false, true, 2), "Off in settings")
+assert.strictEqual(Audio.channelState(false, true, false, 2), "Not running")
+
+assert.strictEqual(Audio.deviceState("Output", false, 0, "sink"), "Output")
+assert.strictEqual(Audio.deviceState("Output", false, 2, "sink"), "Output \u00B7 2 more")
+assert.strictEqual(Audio.deviceState("Input", true, 2, "src"), "Input \u00B7 muted")
+
+assert.strictEqual(Audio.toOutput("AirPods Pro"), "To AirPods Pro")
+assert.strictEqual(Audio.toOutput(""), "No output")
+assert.strictEqual(Audio.toOutput("Radeon High Definition Audio Controller"), "To the output")
 
 assert.strictEqual(Audio.bucketLine(true, false, 2), "Drag an app here")
 assert.strictEqual(Audio.bucketLine(true, true, 2), "")
