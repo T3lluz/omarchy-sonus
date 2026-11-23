@@ -118,7 +118,6 @@ Column {
       host: view.host
       icon: Model.channelPixel(view.key)
       iconColor: view.tone
-      story: Model.storyOf(view.key)
       instant: view.band >= 0 || view.hoverBand >= 0
       title: view.title + " EQ"
       // Reads out the band being touched, then goes back to the curve.

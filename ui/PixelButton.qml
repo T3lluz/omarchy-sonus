@@ -16,7 +16,11 @@ PanelActionButton {
 
   iconText: ""
 
+  // Pointing at it plays its icon (Motion.js), where the icon has a play.
+  onHovered: function(isHovered) { if (isHovered) pixel.play++ }
+
   PixelIcon {
+    id: pixel
     anchors.centerIn: parent
     name: button.icon
     size: button.fontSize

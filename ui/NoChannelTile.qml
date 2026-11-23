@@ -45,7 +45,6 @@ Room {
       status: Audio.toOutput(tile.service ? tile.service.outputLabel : "")
       showFigure: false
       showChevron: false
-      story: "pop"
       tick: tile.story
       delay: tile.delay + 120
 

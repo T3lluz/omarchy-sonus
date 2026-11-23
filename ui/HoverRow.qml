@@ -15,6 +15,9 @@ Rectangle {
   property color foreground: "white"
   property int unit: 2
   property string fontFamily: Style.font.family
+  // Goes up as the card shows, to play the row's icons, `playDelay` ms in.
+  property int play: 0
+  property int playDelay: 0
   readonly property bool known: Model.hasLevel(hoverRow.entry.volume)
 
   height: Math.max(name.implicitHeight, Style.space(14)) + Style.space(6) * 2
@@ -28,6 +31,8 @@ Rectangle {
     name: hoverRow.entry.icon
     size: Style.font.body
     color: hoverRow.entry.muted ? Qt.darker(hoverRow.foreground, 1.5) : hoverRow.tone
+    play: hoverRow.play
+    playDelay: hoverRow.playDelay
   }
 
   Text {
@@ -62,6 +67,8 @@ Rectangle {
       name: hoverRow.entry.mark || "sliders-horizontal"
       size: Style.font.body
       color: hoverRow.entry.muted ? Qt.darker(hoverRow.foreground, 1.5) : hoverRow.tone
+      play: hoverRow.play
+      playDelay: hoverRow.playDelay + 200
     }
   }
 

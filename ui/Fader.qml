@@ -3,6 +3,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
+import "Motion.js" as Motion
 
 // The same control for a device, a channel and an app: the mute button in the
 // room's icon column, a pixel icon that shows the level, then the meter of
@@ -62,13 +63,19 @@ Item {
       name: Model.levelPixel(fader.muted, fader.level, fader.mic)
       size: fader.small ? Style.font.bodySmall : Style.font.title
       color: fader.muted ? fader.host.dim : fader.tone
+      // Pointing at it plays it: the waves ripple, the capsule lifts. A
+      // microphone that hears something fills its capsule to the level.
+      play: muteMouse.hovers
+      fill: fader.mic && !fader.muted && !Style.reduceMotion ? Motion.fillRows(fader.peak) : 0
     }
 
     MouseArea {
       id: muteMouse
+      property int hovers: 0
       anchors.fill: parent
       enabled: fader.present
       hoverEnabled: true
+      onEntered: hovers++
       cursorShape: Qt.PointingHandCursor
       onClicked: fader.toggleMute()
     }

@@ -3,6 +3,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
+import "Motion.js" as Motion
 
 // One app playing sound, as a small room inside the channel it plays into,
 // in that channel's tone. The top line is what you pick up: drag it onto
@@ -33,9 +34,18 @@ Rectangle {
   readonly property bool lifted: host.dragKey === key
   readonly property bool muted: fader.muted
   readonly property real pad: Style.space(6)
+  // Sound coming out of it now; a paused player keeps its stream, idle.
+  readonly property bool playing: {
+    if (!service) return false
+    service.appsVersion
+    var info = service.appInfo[key]
+    return !!(info && info.playing)
+  }
+  // Goes up on a click, to play the fallback icon; and each time the
+  // channels open under it, to play theirs.
   property int story: 0
-  property real k: 1
-  readonly property var pose: Model.storyPose("pop", k)
+  property int pickPlays: 0
+  onPickingChanged: if (picking) pickPlays++
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: body.implicitHeight + pad * 2
@@ -46,18 +56,8 @@ Rectangle {
   border.color: Qt.rgba(tone.r, tone.g, tone.b, 0.6)
   opacity: lifted ? 0.35 : 1
   onKeyedChanged: if (keyed) host.ensureVisible(card)
-  onStoryChanged: if (!Style.reduceMotion) storyRun.restart()
 
   Behavior on color { ColorAnimation { duration: Style.duration(140) } }
-
-  NumberAnimation {
-    id: storyRun
-    target: card
-    property: "k"
-    from: 0
-    to: 1
-    duration: Style.duration(520)
-  }
 
   HoverHandler {
     id: cardHover
@@ -94,7 +94,6 @@ Rectangle {
         y: Math.round((parent.height - height) / 2)
         width: Style.space(16)
         height: width
-        transform: Translate { x: card.pose.x; y: card.pose.y }
 
         Image {
           id: appImage
@@ -116,6 +115,7 @@ Rectangle {
           name: "app-windows"
           size: Style.font.title
           color: card.muted ? card.host.dim : card.tone
+          play: card.story
         }
       }
 
@@ -123,7 +123,7 @@ Rectangle {
         id: name
         anchors.left: icon.right
         anchors.leftMargin: Style.space(6)
-        anchors.right: chevron.left
+        anchors.right: bars.left
         anchors.rightMargin: Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
@@ -133,6 +133,18 @@ Rectangle {
         font.family: card.host.fontFamily
         font.pixelSize: Style.font.bodySmall
         font.bold: true
+      }
+
+      // Its equaliser: the bars play while sound comes out, on the panel's
+      // one clock, and stand still, dimmed, while it is paused.
+      PixelIcon {
+        id: bars
+        anchors.right: chevron.left
+        anchors.rightMargin: Style.space(4)
+        anchors.verticalCenter: parent.verticalCenter
+        custom: Motion.eqArt(card.host.motionTick, card.playing && !card.muted && !Style.reduceMotion)
+        size: Style.font.caption
+        color: card.playing && !card.muted ? card.tone : card.host.dim
       }
 
       PixelIcon {
@@ -216,6 +228,7 @@ Rectangle {
           Rectangle {
             id: route
             required property var modelData
+            required property int index
             readonly property bool here: card.channel === modelData.value
             readonly property color routeTone: card.host.toneFor(modelData.value)
 
@@ -227,16 +240,22 @@ Rectangle {
             border.color: Qt.rgba(routeTone.r, routeTone.g, routeTone.b, 0.7)
 
             PixelIcon {
+              id: routeIcon
               anchors.centerIn: parent
               name: Model.channelPixel(route.modelData.value)
               size: Style.font.title
               color: route.routeTone
+              play: card.pickPlays + routeMouse.hovers
+              playDelay: routeMouse.containsMouse ? 0 : route.index * 70
             }
 
             MouseArea {
               id: routeMouse
+              // Pointing at a channel plays its icon.
+              property int hovers: 0
               anchors.fill: parent
               hoverEnabled: true
+              onEntered: hovers++
               cursorShape: Qt.PointingHandCursor
               onClicked: card.host.assign(card.key, route.modelData.value)
             }

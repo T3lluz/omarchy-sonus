@@ -16,7 +16,6 @@ Item {
   property bool muted: false
   property string icon: ""
   property color iconColor: host.fg
-  property string story: "pulse"
   property real markSize: Style.font.display
   property string title: ""
   property string line: ""
@@ -27,9 +26,8 @@ Item {
 
   property int typed: 0
   property bool cursorOn: true
+  // Goes up each time the icon should act itself out (Motion.js).
   property int tick: 0
-  property real k: 1
-  readonly property var pose: Model.storyPose(story, k)
   readonly property string revealed: Model.revealLine(line, typed, cursorOn)
 
   implicitHeight: Math.max(mark.height, labels.implicitHeight)
@@ -42,7 +40,6 @@ Item {
 
   onLineChanged: typed = instant || Style.reduceMotion ? line.length : 0
   onInstantChanged: if (instant) typed = line.length
-  onTickChanged: if (!Style.reduceMotion) storyRun.restart()
   // A page coming into view types its line out and plays its mark again.
   onVisibleChanged: if (visible && host.opened) arrive()
 
@@ -63,15 +60,6 @@ Item {
     repeat: true
     running: hero.visible && hero.host.opened && !Style.reduceMotion
     onTriggered: hero.cursorOn = !hero.cursorOn
-  }
-
-  NumberAnimation {
-    id: storyRun
-    target: hero
-    property: "k"
-    from: 0
-    to: 1
-    duration: Style.duration(660)
   }
 
   // Measures two real lines of the prompt, for the room it always keeps.
@@ -107,7 +95,7 @@ Item {
       name: hero.icon
       size: hero.markSize
       color: hero.iconColor
-      transform: Translate { x: hero.pose.x * iconMark.cell; y: hero.pose.y * iconMark.cell }
+      play: hero.tick
     }
   }
 

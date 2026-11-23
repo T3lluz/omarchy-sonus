@@ -1,6 +1,5 @@
 import QtQuick
 import qs.Commons
-import "Model.js" as Model
 
 // A room's first line: its pixel icon, the name over a line of state, and
 // the volume in the block face on the right. The chevron by the name says
@@ -21,29 +20,31 @@ Item {
   property bool expanded: false
   property bool dimmed: false
   property int delay: 0
-  // The icon's story (Model.storyOf) and a count that plays it each time it
-  // goes up.
-  property string story: "pop"
+  // Goes up each time the icon should act itself out (Motion.js).
   property int tick: 0
-  property real k: 1
-  readonly property var pose: Model.storyPose(story, k)
   readonly property alias iconItem: iconBox
 
   width: parent ? parent.width : 0
   implicitHeight: Math.max(labels.implicitHeight, showFigure ? figure.implicitHeight : 0, iconBox.height)
 
-  onTickChanged: if (!Style.reduceMotion) storyRun.restart()
+  // What the name's column needs so that no word in it breaks: its longest
+  // word, with the chevron after it. The figure gives up room to keep that.
+  readonly property string longestWord: title.split(/\s+/).reduce(function(a, b) { return b.length > a.length ? b : a }, "")
+  readonly property real titleNeed: Math.ceil(wordMetrics.advanceWidth) + Style.space(1)
+    + (showChevron ? chevron.implicitWidth + Style.space(5) : 0)
+  // Too narrow even with the smallest figure (a very small screen): the name
+  // drops to the caption size, Monocraft's own pixel grid, and the chevron
+  // steps aside, rather than break inside a word.
+  readonly property bool cramped: labels.width + 0.5 < titleNeed
 
-  NumberAnimation {
-    id: storyRun
-    target: head
-    property: "k"
-    from: 0
-    to: 1
-    duration: Style.duration(head.story === "buzz" ? 520 : 660)
+  TextMetrics {
+    id: wordMetrics
+    font.family: head.host.fontFamily
+    font.pixelSize: Style.font.body
+    font.bold: true
+    text: head.longestWord
   }
 
-  // Moves in whole pixels of its own grid, so it never smears.
   PixelIcon {
     id: iconBox
     x: Math.round((head.host.iconColumn - width) / 2)
@@ -51,7 +52,7 @@ Item {
     name: head.icon
     size: head.host.iconColumn
     color: head.dimmed ? head.host.dim : head.tone
-    transform: Translate { x: head.pose.x * iconBox.cell; y: head.pose.y * iconBox.cell }
+    play: head.tick
   }
 
   Column {
@@ -76,11 +77,11 @@ Item {
         property real lastHeight: 0
         width: Math.min(implicitWidth, parent.width - room)
         textFormat: Text.PlainText
-        wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+        wrapMode: Text.Wrap
         text: head.title
         color: head.dimmed ? head.host.dim : head.host.fg
         font.family: head.host.fontFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: head.cramped ? Style.font.caption : Style.font.body
         font.bold: true
         onLineLaidOut: function(line) {
           if (!line.isLast) return
@@ -93,7 +94,7 @@ Item {
       // Flips when the room opens; turned pixel art would smear on the way.
       PixelIcon {
         id: chevron
-        visible: head.showChevron
+        visible: head.showChevron && !head.cramped
         x: Math.round(titleText.lastRight + Style.space(5))
         y: Math.round(titleText.lastY + (titleText.lastHeight - height) / 2)
         name: "chevron-down"
@@ -126,8 +127,11 @@ Item {
     foreground: head.host.fg
     mark: head.mark
     dimmed: head.figureDimmed
+    // The mark acts itself out a beat after the room's icon.
+    markPlay: head.tick
     // The block face is measured on the shell's font, not the panel's
     // Monocraft, so the digits keep their size.
     fontFamily: head.host.shellFont
+    maxWidth: head.width - head.host.textInset - Style.space(8) - head.titleNeed
   }
 }

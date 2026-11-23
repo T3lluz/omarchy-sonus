@@ -61,6 +61,13 @@ Grid {
       border.width: keyed ? Math.max(1, Style.space(1)) : 0
       border.color: Qt.rgba(list.tone.r, list.tone.g, list.tone.b, 0.6)
       onKeyedChanged: if (keyed) list.host.ensureVisible(pick)
+      // Each device's icon plays as the list opens, or as it connects; the
+      // check draws in where the device in use is, and again on a switch.
+      onCurrentChanged: if (current) check.start(true)
+      Component.onCompleted: {
+        pickIcon.play++
+        if (current) check.play++
+      }
 
       Behavior on color { ColorAnimation { duration: Style.duration(140) } }
 
@@ -71,6 +78,7 @@ Grid {
         name: Model.devicePixel(pick.modelData.form, list.section)
         size: Style.font.title
         color: pick.current || pick.lit ? list.tone : list.host.dim
+        playDelay: 40 + pick.index * 60
       }
 
       Text {
@@ -102,6 +110,7 @@ Grid {
         size: Style.font.bodySmall
         color: list.tone
         opacity: pick.current ? 1 : 0
+        playDelay: 240
       }
 
       MouseArea {

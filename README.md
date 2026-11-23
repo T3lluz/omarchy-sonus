@@ -4,7 +4,7 @@
   <p>A Sonar-style mixer for <b>PipeWire</b> that drops down from the Omarchy bar:<br/>
   system output and input, <b>Game, Chat, Media and Aux</b> channels, a saved mix per device, and a 10-band EQ.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v1.10.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.11.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-a58bff" />
     <img alt="PipeWire" src="https://img.shields.io/badge/PipeWire-filter--chain-a58bff" />
     <a href="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml/badge.svg" /></a>
@@ -16,7 +16,7 @@
 
 ## Features
 
-- **Rooms:** every device and channel is a room in a colour of its own from your theme, its volume in big block digits over a meter of ten cells. The meter is the fader: click or drag across it. Icons are pixel art, sharp at any scale (apps keep their own), and the panel comes alive when it opens (rooms rise in, meters fill, the mark's faders slide up, the title's prompt types itself out), then holds still. The bar icon is the same mark; muted, its faders are down.
+- **Rooms:** every device and channel is a room in a colour of its own from your theme, its volume in big block digits over a meter of ten cells. The meter is the fader: click or drag across it. Icons are pixel art, sharp at any scale (apps keep their own), and each acts out what it is, a pixel at a time: a speaker's waves ripple out, headphones tap a beat, the laptop types a line on its screen, a chat types its message, the controller's buttons press, a mute's cross draws across. They play when the panel opens, when you point at or click them, and when what they show changes (a mute, a new device, an app starting to play), then rest. An app's little equaliser bars play while it plays and hold still when it is paused, and the microphone's capsule fills with what it hears. The bar icon is the same mark; muted, its faders are down.
 - **Output and input:** each has a room with the system volume and mute. Click it to list every device of that kind; choosing an output switches the system to it. The microphone's meter lights up with what it hears.
 - **A mix per device:** AirPods keep one volume and equalizer, the laptop speakers keep another. The first time a device is used it starts from the mix you already have; after that, coming back restores it.
 - **See where the sound goes:** the output room names the device in use and how many others there are. It has its own icon (laptop, headphones, headset, AirPods and other earbuds, speaker, monitor). Switching outputs, whether from a keybinding, a cable or Bluetooth, shows a toast with the device's icon and name. Scrolling on the bar icon shows the same icon in the volume toast.

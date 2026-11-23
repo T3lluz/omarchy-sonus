@@ -455,51 +455,6 @@ function revealLine(line, typed, cursorOn) {
   return rest === "" ? shown : shown + CLEAR + escapeHtml(rest) + "</font>"
 }
 
-// ---------------------------------------------------------------- motion
-
-// What each icon acts out when its room comes in or is clicked, after
-// DailyDash's AnimatedIcon: only that motion, ending exactly where it began.
-// Laptops hop, earbuds and headphones tilt, speakers and media pulse, a
-// controller shakes, a chat buzzes; the rest pop.
-var STORIES = {
-  laptop: "hop",
-  headphones: "tilt",
-  headset: "tilt",
-  earbuds: "tilt",
-  bluetooth: "pulse",
-  speaker: "pulse",
-  mic: "pulse",
-  game: "shake",
-  chat: "buzz",
-  media: "pulse",
-  aux: "wiggle"
-}
-
-function storyOf(kind) {
-  return STORIES[kind] || "pop"
-}
-
-// The icon's pose `k` of the way through its story (0..1): an offset in
-// whole pixels of the icon's own grid, so pixel art never smears.
-function storyPose(story, k) {
-  var pose = { x: 0, y: 0 }
-  if (!(k > 0 && k < 1)) return pose
-  var arc = Math.sin(Math.PI * k)
-  var fade = 1 - k
-  if (story === "hop") pose.y = -Math.round(arc * 3)
-  else if (story === "wiggle") pose.x = Math.round(Math.sin(k * Math.PI * 3) * 1.6 * fade)
-  else if (story === "press") pose.y = Math.round(arc * 1.2)
-  else if (story === "tilt") pose.x = Math.round(Math.sin(k * Math.PI * 2) * 2 * fade)
-  else if (story === "pulse") pose.y = -Math.round(Math.abs(Math.sin(k * Math.PI * 2)) * 1.4)
-  else if (story === "shake") pose.x = Math.round(Math.sin(k * Math.PI * 4) * 2 * fade)
-  else if (story === "buzz") pose.x = Math.round(Math.sin(k * Math.PI * 10) * 1.6 * fade)
-  else pose.y = -Math.round(arc * 2)
-  // No negative zero: a pose at rest equals { x: 0, y: 0 }.
-  pose.x += 0
-  pose.y += 0
-  return pose
-}
-
 // Text arriving the way a terminal decodes it: the first `progress` of it
 // is real, the rest cycles through glyphs. Spaces and separators stay put so
 // the line keeps its shape. `seed` varies the noise between runs.

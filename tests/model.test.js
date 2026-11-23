@@ -11,7 +11,7 @@ function load(file, names) {
 const Model = load("Model.js", ["hasLevel", "percentOf", "CHANNEL_PIXELS", "channelPixel", "DEVICE_PIXELS", "devicePixel",
   "levelPixel", "markFor", "UI_PIXELS", "GLYPH_PIXELS", "PIXEL_GLYPHS", "pixelFor",
   "KEY_TONES", "toneName", "parsePalette", "contrast", "TONE_HUES", "hexRgb", "roomToneHex", "bigDigits",
-  "PIXEL_FONT", "pixelText", "drawable", "meterCells", "METER", "faderValue", "STORIES", "storyOf", "storyPose",
+  "PIXEL_FONT", "pixelText", "drawable", "meterCells", "METER", "faderValue",
   "scramble", "hoverRows", "LOGO_KNOBS", "LOGO_DOWN", "logoGrid", "gridRects", "sonusLogo", "logoKnobs", "revealLine"])
 const { icons } = load("Pixels.js", ["icons"])
 const Glyphs = load("Glyphs.js", ["deviceGlyph", "channel", "levelIcon"])
@@ -146,18 +146,6 @@ assert.strictEqual(Model.faderValue(53, 100, 0.05), 0.55)
 assert.strictEqual(Model.faderValue(-10, 100, 0.05), 0)
 assert.strictEqual(Model.faderValue(140, 100, 0.05), 1)
 assert.strictEqual(Model.faderValue(10, 0, 0.05), 0)
-
-// Every story ends where it began, in whole pixels the whole way.
-for (const story of new Set(Object.values(Model.STORIES).concat(["pop", "press"]))) {
-  assert.deepStrictEqual(Model.storyPose(story, 0), { x: 0, y: 0 }, story)
-  assert.deepStrictEqual(Model.storyPose(story, 1), { x: 0, y: 0 }, story)
-  for (let k = 0; k <= 1; k += 0.05) {
-    const p = Model.storyPose(story, k)
-    assert.ok(Number.isInteger(p.x) && Number.isInteger(p.y), story)
-  }
-}
-assert.strictEqual(Model.storyOf("game"), "shake")
-assert.strictEqual(Model.storyOf("unknown"), "pop")
 
 // The decode keeps the line's shape and ends on the line.
 const line = "Output · 2 more"

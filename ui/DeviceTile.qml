@@ -37,6 +37,9 @@ Room {
   keyed: host.cursorActive && host.cursorKey === cursor
   onKeyedChanged: if (keyed) host.ensureVisible(tile)
   onClicked: tile.host.toggleDevices(tile.section)
+  // Switching to another device plays its icon, as the panel opening does.
+  readonly property string deviceName: device ? device.name : ""
+  onDeviceNameChanged: if (host.opened) story++
 
   HoverHandler {
     onHoveredChanged: if (hovered && tile.host.dragKey === "") tile.host.pointAt(tile.cursor)
@@ -61,7 +64,6 @@ Room {
     dimmed: !tile.channelPresent
     showChevron: tile.others > 0 || tile.listOpen
     expanded: tile.listOpen
-    story: Model.storyOf(tile.device ? tile.device.form : tile.section === "src" ? "mic" : "speaker")
     tick: tile.story
     delay: tile.delay + 120
 

@@ -11,6 +11,7 @@ import "ui/Audio.js" as Audio
 import "ui/Glyphs.js" as Glyphs
 import "ui/Eq.js" as Eq
 import "ui/Model.js" as Model
+import "ui/Motion.js" as Motion
 
 // Sonus in the bar, in the Rooms look. The mark, pixel art, drops the panel:
 // the output and input in use, then one room per channel holding the apps
@@ -43,8 +44,30 @@ Panel {
   // side, each about as wide as an official panel's half row plus a figure.
   // Rooms are padded 10 and joined by 3, as in Batteries; their icons are
   // pixel art at about 20 px (24 device pixels on a 1.25 scale), and names
-  // and meters start past that column.
-  readonly property real mixerWidth: Style.space(860)
+  // and meters start past that column. It grows past 860 when a channel's
+  // name and a full "100" with its mark would not fit side by side, so a
+  // name never breaks inside a word (Monocraft is wider than most fonts).
+  readonly property real mixerWidth: Math.max(Style.space(860), Math.ceil(channelNeed * 4 + roomGap * 3))
+  readonly property real channelNeed: {
+    var chevron = Math.max(1, Math.round(Style.font.caption * dpr / 12)) * 12 / dpr
+    return roomPad * 2 + textInset + Math.ceil(titleProbe.advanceWidth) + Style.space(1)
+      + chevron + Style.space(5) + Style.space(8) + widestFigure.implicitWidth
+  }
+  TextMetrics {
+    id: titleProbe
+    text: root.categories.reduce(function(a, c) { return c.title.length > a.length ? c.title : a }, "")
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.body
+    font.bold: true
+  }
+  // The widest a channel's figure gets: 100, with a mark beside it.
+  BigFigure {
+    id: widestFigure
+    visible: false
+    value: 100
+    mark: "sliders-horizontal"
+    fontFamily: root.shellFont
+  }
   readonly property real roomGap: Style.space(3)
   readonly property real roomPad: Style.space(10)
   readonly property real iconColumn: Math.round(Style.font.heading * 1.25)
@@ -115,6 +138,24 @@ Panel {
     repeat: true
     running: root.opened && !Style.reduceMotion && root.clock < root.awakeUntil
     onTriggered: root.clock = Date.now() - root.clockBase
+  }
+
+  // The icons' loops (an app's equaliser bars) run off this one count, which
+  // comes round every Motion.LOOP_TICKS. It runs only while the mixer is open
+  // and something plays; otherwise every icon rests.
+  readonly property bool anyPlaying: {
+    if (!service) return false
+    service.appsVersion
+    var info = service.appInfo
+    for (var key in info) if (info[key] && info[key].playing && !info[key].muted) return true
+    return false
+  }
+  property int motionTick: 0
+  Timer {
+    interval: Motion.TICK_MS
+    repeat: true
+    running: root.opened && root.view === "mixer" && root.anyPlaying && !Style.reduceMotion
+    onTriggered: root.motionTick = (root.motionTick + 1) % Motion.LOOP_TICKS
   }
 
   // Switching between the mixer, an equalizer and the settings slides the

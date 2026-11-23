@@ -50,6 +50,12 @@ Room {
   naturalHeight: top.implicitHeight + spacing + bucketNeed
   onKeyedChanged: if (keyed) host.ensureVisible(tile)
   onClicked: if (channelPresent) host.toggleChannel(key)
+  // An app starting to play here plays the channel's icon.
+  property int appsSeen: 0
+  onAppsChanged: {
+    if (apps.length > appsSeen && host.opened) story++
+    appsSeen = apps.length
+  }
 
   Column {
     id: top
@@ -80,7 +86,6 @@ Room {
       dimmed: !tile.channelPresent
       showChevron: tile.channelPresent
       expanded: tile.expanded
-      story: Model.storyOf(tile.key)
       tick: tile.story
       delay: tile.delay + 120
     }

@@ -39,6 +39,9 @@ PopupWindow {
   readonly property bool scaleReady: visible && !!barWindow && Math.round(devicePixelRatio * 120) === Math.round(barWindow.devicePixelRatio * 120)
   property bool revealed: false
   onVisibleChanged: if (!visible) revealed = false
+  // Each time the card shows, its icons play, a row after another.
+  property int plays: 0
+  onRevealedChanged: if (revealed) plays++
   onScaleReadyChanged: if (scaleReady) Qt.callLater(function() { if (card.scaleReady) card.revealed = true })
 
   function toneOf(name) {
@@ -90,7 +93,10 @@ PopupWindow {
 
         HoverRow {
           required property var modelData
+          required property int index
           width: list.width
+          play: card.plays
+          playDelay: 60 + index * 70
           entry: modelData
           tone: card.toneOf(modelData.tone)
           foreground: card.foreground

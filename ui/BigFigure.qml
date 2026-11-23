@@ -16,11 +16,25 @@ Item {
   property color tone: "white"
   property color foreground: "white"
   property string mark: ""
+  property int markPlay: 0
   // A muted level reads quieter, as an unknown one does.
   property bool dimmed: false
   property string fontFamily: Style.font.family
   property real fontSize: Style.font.bodySmall
-  readonly property real markSize: Math.round(fontSize * 1.1)
+  // The most it may take across. Where the room is short (a narrow screen),
+  // the face steps down a size rather than push the name into breaking.
+  property real maxWidth: Infinity
+  // The size it draws at: `fontSize`, or the largest below it that fits.
+  readonly property int faceSize: {
+    var base = Math.round(fontSize)
+    var charW = baseGrid.implicitWidth / 10
+    for (var s = base; s > 7; s--) {
+      var w = cols * charW * s / base + Style.space(3) + Math.max(pct.implicitWidth, Math.round(s * 1.1))
+      if (w <= maxWidth) return s
+    }
+    return 7
+  }
+  readonly property real markSize: Math.round(faceSize * 1.1)
 
   readonly property bool known: Model.hasLevel(value)
   readonly property var rows: Model.bigDigits(known ? String(Math.round(value)) : "--")
@@ -50,12 +64,21 @@ Item {
   FontMetrics {
     id: metrics
     font.family: figure.fontFamily
-    font.pixelSize: figure.fontSize
+    font.pixelSize: figure.faceSize
   }
 
-  // The width of the font's own characters, measured as drawn.
+  // The width of the font's own characters, measured as drawn, at the size
+  // it draws and at the size it would like.
   Text {
     id: grid
+    visible: false
+    text: "0000000000"
+    font.family: figure.fontFamily
+    font.pixelSize: figure.faceSize
+  }
+
+  Text {
+    id: baseGrid
     visible: false
     text: "0000000000"
     font.family: figure.fontFamily
@@ -91,6 +114,8 @@ Item {
       name: figure.mark
       size: figure.markSize
       color: figure.dimmed ? Qt.darker(figure.foreground, 1.5) : figure.tone
+      play: figure.markPlay
+      playDelay: 220
     }
 
     PixelText {

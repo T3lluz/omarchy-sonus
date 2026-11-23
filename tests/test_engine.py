@@ -100,6 +100,13 @@ class PipewireHelpersTest(unittest.TestCase):
         self.assertFalse(pipewire.is_app_stream({"media.class": "Stream/Input/Audio", "application.process.binary": "discord"}))
 
 
+    def test_a_paused_stream_is_not_playing(self):
+        self.assertTrue(pipewire.stream_playing({"state": "running"}, {"pulse.corked": False}))
+        self.assertFalse(pipewire.stream_playing({"state": "idle"}, {"pulse.corked": True}))
+        self.assertFalse(pipewire.stream_playing({"state": "running"}, {"pulse.corked": "true"}))
+        self.assertFalse(pipewire.stream_playing({"state": "suspended"}, {}))
+
+
 class ProfileTest(unittest.TestCase):
     def test_airpods_share_a_key_across_bluetooth_profiles(self):
         a2dp = profiles.profile_key("bluez_output.AA_BB_CC_DD_EE_FF.1")

@@ -21,7 +21,18 @@ Item {
   implicitWidth: size
   implicitHeight: size
 
+  // The kit's icons play once as their page comes into view, top to bottom.
+  function arrive() {
+    if (!visible || pixel === "") return
+    var at = mapToItem(null, 0, 0)
+    pixelIcon.playDelay = 160 + Math.max(0, Math.min(600, Math.round(at.y * 0.8)))
+    pixelIcon.play++
+  }
+  onVisibleChanged: arrive()
+  Component.onCompleted: Qt.callLater(arrive)
+
   PixelIcon {
+    id: pixelIcon
     visible: glyph.pixel !== ""
     anchors.centerIn: parent
     name: glyph.pixel

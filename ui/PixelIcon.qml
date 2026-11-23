@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Window
+import qs.Commons
 import "Pixels.js" as Pixels
+import "Motion.js" as Motion
 
 // A pixel icon from Pixels.js, drawn as rectangles on whole device pixels so
 // it stays sharp at any scale. The icon comes out as close to `size` as the
@@ -8,6 +10,10 @@ import "Pixels.js" as Pixels
 // same grid halved (12 cells) where it would not. On a 1.25 scale a 14 px
 // request draws 12 device pixels; a 20 px one draws 24.
 // Never scaled: a fractional scale only ever picks the nearest sharp size.
+//
+// It also acts itself out (Motion.js): each time `play` goes up, and, drawn
+// in from nothing, when `name` changes to an icon that moves. Moving, it
+// draws its parts a whole stroke at a time; at rest, the plain art.
 Item {
   id: icon
 
@@ -20,18 +26,66 @@ Item {
   // Device pixels per cell of the halved grid, to match other pixel art
   // (PixelText) stroke for stroke; 0 picks it from `size`.
   property int unit: 0
+  // Goes up each time the icon should act itself out, after `playDelay` ms.
+  property int play: 0
+  property int playDelay: 0
+  // Rows of the microphone's capsule lit by what it hears (Motion.fillRows).
+  property int fill: 0
 
   readonly property var art: custom || Pixels.icons[name] || null
+  readonly property var spec: custom ? null : Motion.specFor(name)
   readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
   // Device pixels across, in twelfths: odd counts take the halved grid. Its
   // strokes are this many device pixels thick either way.
   readonly property int twelfths: unit > 0 ? unit : Math.max(1, Math.round(size * dpr / 12))
   readonly property bool fine: twelfths % 2 === 0
   readonly property real cell: (fine ? twelfths / 2 : twelfths) / dpr
-  readonly property var rects: art ? (fine ? art.g24 : art.g12) : []
+
+  // How far through its play, 1 at rest, and the frame that shows: whole
+  // frames only, so the rectangles change a handful of times a play.
+  property real t: 1
+  property bool entering: false
+  readonly property int frames: spec ? Math.max(1, Math.round(spec.ms / Motion.FRAME_MS)) : 1
+  readonly property int frame: Math.min(frames, Math.floor(t * frames))
+  readonly property bool moving: !!spec && frame < frames
+  readonly property var rects: {
+    if (!art) return []
+    if (moving || fill > 0) return Motion.frame(art, spec, frame / frames, entering, fine, fill)
+    return fine ? art.g24 : art.g12
+  }
+
+  property bool ready: false
+
+  function start(fromNothing) {
+    if (!spec || Style.reduceMotion) return
+    playRun.stop()
+    entering = fromNothing
+    t = 0
+    playWait.duration = fromNothing ? 0 : Style.duration(playDelay)
+    playRun.start()
+  }
+
+  onPlayChanged: start(false)
+  onNameChanged: if (ready) start(true)
+  Component.onCompleted: ready = true
 
   implicitWidth: twelfths * 12 / dpr
   implicitHeight: implicitWidth
+  // A part may step out of the icon's square on its way in (the download
+  // arrow); it never shows outside it.
+  clip: moving
+
+  SequentialAnimation {
+    id: playRun
+    PauseAnimation { id: playWait; duration: 0 }
+    NumberAnimation {
+      target: icon
+      property: "t"
+      from: 0
+      to: 1
+      duration: icon.spec ? Style.duration(icon.spec.ms) : 0
+    }
+  }
 
   Repeater {
     model: icon.rects

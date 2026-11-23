@@ -66,6 +66,9 @@ class AppStream:
     icon_name: str = ""
     binary: str = ""
     channel: str = ""
+    # Sound coming out of it now. A paused player keeps its stream, corked
+    # and idle, so the panel can still offer to move it.
+    playing: bool = False
     members: list[int] = field(default_factory=list)
     # Object serial of every member stream (== pactl sink-input index);
     # moving an app means moving each of these.
@@ -170,6 +173,12 @@ def is_app_stream(props: dict) -> bool:
     if props.get("node.link-group") and not props.get("application.process.binary"):
         return False
     return True
+
+
+def stream_playing(info: dict, props: dict) -> bool:
+    """Whether a stream is playing right now, not paused or done."""
+    corked = str(props.get("pulse.corked") or "").lower() == "true" or props.get("pulse.corked") is True
+    return str(info.get("state") or "") == "running" and not corked
 
 
 def _sink_input_map() -> dict[int, int]:
@@ -460,8 +469,10 @@ def snapshot() -> Snapshot:
             continue
         serial = int(props.get("object.serial") or 0)
         volume, muted = _props_volume(info)
+        playing = stream_playing(info, props)
         existing = grouped.get(key)
         if existing is not None:
+            existing.playing = existing.playing or playing
             existing.members.append(int(obj["id"]))
             if serial:
                 existing.serials.append(serial)
@@ -476,6 +487,7 @@ def snapshot() -> Snapshot:
             icon_name=icon,
             binary=binary,
             channel=serial_to_channel.get(routes.get(serial, -1), ""),
+            playing=playing,
             members=[int(obj["id"])],
             serials=[serial] if serial else [],
         )

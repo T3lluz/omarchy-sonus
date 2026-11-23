@@ -92,7 +92,9 @@ def pixel_icon(name: str, path: Path = PIXELS_JS) -> dict | None:
         text = path.read_text(encoding="utf-8")
     except OSError:
         return None
-    m = re.search(r'"' + re.escape(name) + r'":\s*\{\s*g24:\s*(\[.*?\]\]),\s*g12:\s*(\[.*?\]\])\s*\}', text)
+    # The icon's own art leads its line; the parts and layers that follow it
+    # are for the panel's motion.
+    m = re.search(r'^  "' + re.escape(name) + r'":\s*\{\s*g24:\s*(\[\[[^\n]*?\]\]),\s*g12:\s*(\[\[[^\n]*?\]\])\s*[,}]', text, re.M)
     if not m:
         return None
     return {"g24": json.loads(m.group(1)), "g12": json.loads(m.group(2))}
