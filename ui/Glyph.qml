@@ -35,7 +35,9 @@ Item {
     textFormat: Text.PlainText
     text: glyph.icon
     color: glyph.color
-    font.family: glyph.fontFamily
+    // A typed glyph is a Nerd Font icon. The kit hands every part the
+    // panel's Monocraft, which has none, so this stays on the shell's font.
+    font.family: Style.font.family
     font.pixelSize: glyph.size
   }
 }

@@ -30,7 +30,14 @@ Panel {
 
   readonly property color fg: bar ? bar.foreground : Commons.Color.foreground
   readonly property color dim: Qt.darker(fg, 1.5)
-  readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  // Text is in Monocraft (OFL, assets/fonts), a pixel face to go with the
+  // pixel icons, loaded from the plugin so it needs no system install. The
+  // bold file is loaded too so bold names are drawn, not smeared. Until it
+  // loads, or if it cannot, text falls back to the bar's font.
+  FontLoader { id: monocraft; source: Qt.resolvedUrl("assets/fonts/Monocraft.ttf") }
+  FontLoader { source: Qt.resolvedUrl("assets/fonts/Monocraft-Bold.ttf") }
+  readonly property string shellFont: bar ? bar.fontFamily : Style.font.family
+  readonly property string fontFamily: monocraft.status === FontLoader.Ready ? monocraft.name : shellFont
 
   // The mixer is wider than Omarchy's 380 so the four channels fit side by
   // side, each about as wide as an official panel's half row plus a figure.
@@ -690,7 +697,7 @@ Panel {
     note: root.hoverNote
     palette: root.palette
     unit: root.pixelUnit
-    fontFamily: button.fontFamily
+    fontFamily: root.fontFamily
   }
 
   // ---- panel --------------------------------------------------------------------

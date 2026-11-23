@@ -126,6 +126,8 @@ Item {
     foreground: head.host.fg
     mark: head.mark
     dimmed: head.figureDimmed
-    fontFamily: head.host.fontFamily
+    // The block face is measured on the shell's font, not the panel's
+    // Monocraft, so the digits keep their size.
+    fontFamily: head.host.shellFont
   }
 }

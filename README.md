@@ -4,7 +4,7 @@
   <p>A Sonar-style mixer for <b>PipeWire</b> that drops down from the Omarchy bar:<br/>
   system output and input, <b>Game, Chat, Media and Aux</b> channels, a saved mix per device, and a 10-band EQ.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v1.9.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.10.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-a58bff" />
     <img alt="PipeWire" src="https://img.shields.io/badge/PipeWire-filter--chain-a58bff" />
     <a href="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-sonus/actions/workflows/ci.yml/badge.svg" /></a>
@@ -98,6 +98,6 @@ The tests check that the panel's EQ model (`ui/Eq.js`) and the engine's (`engine
 
 ## License
 
-MIT. Not affiliated with SteelSeries.
+MIT. The panel text is set in [Monocraft](https://github.com/IdreesInc/Monocraft) by Idrees Hassan, bundled in `assets/fonts` under the SIL Open Font License 1.1 (`assets/fonts/OFL.txt`). Not affiliated with SteelSeries.
 
 One of a set of Omarchy plugins: [Batteries](https://github.com/T3lluz/omarchy-batteries) · [ROG Deck](https://github.com/T3lluz/omarchy-rog-deck) · **Sonus** · [Server Dashboard](https://github.com/T3lluz/omarchy-server-dashboard)
