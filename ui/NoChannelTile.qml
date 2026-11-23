@@ -60,9 +60,9 @@ Room {
     // Each card sits right under Chat's, Media's and Aux's.
     Flow {
       id: flow
-      readonly property real inset: tile.pad + Style.space(3)
+      readonly property real inset: tile.host.snap(tile.pad + Style.space(3))
       readonly property real cardWidth: tile.labelWidth - inset * 2
-      x: tile.labelWidth + tile.host.roomGap + Style.space(3)
+      x: tile.host.snap(tile.labelWidth + tile.host.roomGap + Style.space(3))
       width: parent.width - x
       spacing: tile.host.roomGap + inset * 2
 
@@ -89,7 +89,8 @@ Room {
         text: "Drop here to skip the channels"
         color: tile.dropHot ? tile.host.fg : tile.host.dim
         font.family: tile.host.fontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: tile.host.textSize
+        renderType: Text.NativeRendering
       }
     }
   }

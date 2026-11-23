@@ -280,7 +280,8 @@ Column {
         text: modelData[0]
         color: view.host.dim
         font.family: view.host.fontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: view.host.textSize
+        renderType: Text.NativeRendering
       }
     }
 
@@ -326,8 +327,8 @@ Column {
         text: Eq.gainText(gain)
         color: gain !== 0 && view.eqEnabled ? view.host.fg : view.host.dim
         font.family: view.host.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: gain !== 0 || view.band === index
+        font.pixelSize: view.host.textSize
+        renderType: Text.NativeRendering
       }
     }
 
@@ -344,8 +345,8 @@ Column {
         text: modelData
         color: view.band === index ? view.host.fg : view.host.dim
         font.family: view.host.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
+        font.pixelSize: view.host.textSize
+        renderType: Text.NativeRendering
       }
     }
   }
@@ -368,7 +369,8 @@ Column {
       color: view.host.fg
       opacity: 0.6
       font.family: view.host.fontFamily
-      font.pixelSize: Style.font.bodySmall
+      font.pixelSize: view.host.textSize
+      renderType: Text.NativeRendering
     }
 
     PanelSlider {
@@ -404,8 +406,8 @@ Column {
       text: Eq.dbText(preSlider.dragging ? preSlider.liveValue : view.preamp)
       color: view.host.dim
       font.family: view.host.fontFamily
-      font.pixelSize: Style.font.caption
-      font.bold: true
+      font.pixelSize: view.host.textSize
+      renderType: Text.NativeRendering
     }
 
     Button {

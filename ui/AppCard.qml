@@ -33,7 +33,7 @@ Rectangle {
   readonly property bool keyed: host.cursorActive && host.cursorKey === "app:" + key
   readonly property bool lifted: host.dragKey === key
   readonly property bool muted: fader.muted
-  readonly property real pad: Style.space(6)
+  readonly property real pad: host.snap(Style.space(6))
   // Sound coming out of it now; a paused player keeps its stream, idle.
   readonly property bool playing: {
     if (!service) return false
@@ -90,9 +90,9 @@ Rectangle {
 
       Item {
         id: icon
-        x: grip.x + grip.width + Style.space(5)
+        x: card.host.snap(grip.x + grip.width + Style.space(5))
         y: Math.round((parent.height - height) / 2)
-        width: Style.space(16)
+        width: card.host.snap(Style.space(16))
         height: width
 
         Image {
@@ -122,17 +122,21 @@ Rectangle {
       Text {
         id: name
         anchors.left: icon.right
-        anchors.leftMargin: Style.space(6)
+        anchors.leftMargin: card.host.snap(Style.space(6))
         anchors.right: bars.left
         anchors.rightMargin: Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
         textFormat: Text.PlainText
-        text: card.app.name || "Unknown"
+        // Three lines at most; a longer name ends in an ellipsis and shows
+        // in full in the card's tooltip.
+        maximumLineCount: 3
+        elide: Text.ElideRight
+        text: Model.wrapName(card.app.name || "Unknown", Model.monoColumns(width, card.host.textSize))
         color: card.muted ? card.host.dim : card.host.fg
         font.family: card.host.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        font.bold: true
+        font.pixelSize: card.host.textSize
+        renderType: Text.NativeRendering
       }
 
       // Its equaliser: the bars play while sound comes out, on the panel's
@@ -170,7 +174,8 @@ Rectangle {
 
       PanelToolTip {
         visible: handle.containsMouse && !handle.grabbing && card.host.dragKey === "" && !card.picking
-        text: card.host.routeOptions.length > 1 ? "Drag to a channel, or click to pick one" : "Channels are off"
+        text: (name.truncated ? (card.app.name || "") + "\n" : "")
+          + (card.host.routeOptions.length > 1 ? "Drag to a channel, or click to pick one" : "Channels are off")
         fontFamily: card.host.fontFamily
       }
     }

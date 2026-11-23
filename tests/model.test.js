@@ -11,7 +11,7 @@ function load(file, names) {
 const Model = load("Model.js", ["hasLevel", "percentOf", "CHANNEL_PIXELS", "channelPixel", "DEVICE_PIXELS", "devicePixel",
   "levelPixel", "markFor", "UI_PIXELS", "GLYPH_PIXELS", "PIXEL_GLYPHS", "pixelFor",
   "KEY_TONES", "toneName", "parsePalette", "contrast", "TONE_HUES", "hexRgb", "roomToneHex", "bigDigits",
-  "PIXEL_FONT", "pixelText", "drawable", "meterCells", "METER", "faderValue",
+  "PIXEL_FONT", "pixelText", "drawable", "meterCells", "METER", "faderValue", "MONO_EM", "monoSize", "monoColumns", "wrapName",
   "scramble", "hoverRows", "LOGO_KNOBS", "LOGO_DOWN", "logoGrid", "gridRects", "sonusLogo", "logoKnobs", "revealLine"])
 const { icons } = load("Pixels.js", ["icons"])
 const Glyphs = load("Glyphs.js", ["deviceGlyph", "channel", "levelIcon"])
@@ -147,6 +147,27 @@ assert.strictEqual(Model.faderValue(-10, 100, 0.05), 0)
 assert.strictEqual(Model.faderValue(140, 100, 0.05), 1)
 assert.strictEqual(Model.faderValue(10, 0, 0.05), 0)
 
+// Type on Monocraft's grid: running text at a whole multiple of nine.
+assert.strictEqual(Model.monoSize(11), 9)
+assert.strictEqual(Model.monoSize(12), 9)
+assert.strictEqual(Model.monoSize(16), 18)
+assert.strictEqual(Model.monoSize(4), 9)
+assert.strictEqual(Model.monoColumns(60, 9), 10)
+assert.strictEqual(Model.monoColumns(59.9, 9), 9)
+
+// Names break at spaces, and long raw names at their joints, never inside a word.
+assert.strictEqual(Model.wrapName("Laptop speakers", 20), "Laptop speakers")
+assert.strictEqual(Model.wrapName("Bose QuietComfort Ultra Headphones", 18), "Bose QuietComfort\nUltra Headphones")
+const raw = Model.wrapName("alsa_output.usb-Focusrite_Scarlett_2i2_USB-00.analog-stereo", 20)
+for (const l of raw.split("\n")) assert.ok(l.length <= 20, l)
+assert.strictEqual(raw.replace(/\n/g, ""), "alsa_output.usb-Focusrite_Scarlett_2i2_USB-00.analog-stereo")
+assert.ok(raw.split("\n").slice(0, -1).every(l => "_.-/:".includes(l.slice(-1))), raw)
+assert.strictEqual(Model.wrapName("steam_app_1245620_EldenRingNightreign", 20), "steam_app_1245620_\nEldenRingNightreign")
+assert.strictEqual(Model.wrapName("steam_app_1245620_EldenRingNightreign", 14), "steam_app_\n1245620_\nEldenRing\nNightreign")
+// A run with no joint longer than a line is the only thing cut.
+assert.strictEqual(Model.wrapName("abcdefghij", 4), "abcd\nefgh\nij")
+assert.strictEqual(Model.wrapName("Spotify", 3), "Spo\ntif\ny")
+
 // The decode keeps the line's shape and ends on the line.
 const line = "Output · 2 more"
 const mid = Model.scramble(line, 0.3, 1)
@@ -179,10 +200,10 @@ const plain = t => t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt
 const sentence = "Move Tom & Jerry <3> to Game"
 for (let n = 0; n <= sentence.length; n++)
   for (const on of [true, false]) assert.strictEqual(plain(Model.revealLine(sentence, n, on)).length, sentence.length + 1, n + " " + on)
-assert.strictEqual(Model.revealLine("ab", 0, true), "\u258C<font color=\"#00000000\">b\u258C</font>")
-assert.strictEqual(Model.revealLine("a b", 1, true), "a <font color=\"#00000000\">b\u258C</font>")
-assert.strictEqual(Model.revealLine("ab", 2, true), "ab\u258C")
-assert.strictEqual(Model.revealLine("ab", 2, false), "ab<font color=\"#00000000\">\u258C</font>")
+assert.strictEqual(Model.revealLine("ab", 0, true), "_<font color=\"#00000000\">b_</font>")
+assert.strictEqual(Model.revealLine("a b", 1, true), "a <font color=\"#00000000\">b_</font>")
+assert.strictEqual(Model.revealLine("ab", 2, true), "ab_")
+assert.strictEqual(Model.revealLine("ab", 2, false), "ab<font color=\"#00000000\">_</font>")
 assert.ok(Model.revealLine("Tom & Jerry", 11, true).includes("Tom &amp; Jerry"))
 
 console.log("model ok")

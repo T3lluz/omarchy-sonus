@@ -423,6 +423,58 @@ function faderValue(x, width, step) {
   return Math.round(v / s) * s
 }
 
+// ------------------------------------------------------------------ type
+
+// Monocraft draws each glyph on a grid nine of its pixels tall, every glyph
+// two thirds of that wide. Text lands on the screen's pixels only at a whole
+// multiple of nine, so the panel's text comes in two sizes: running text at
+// the multiple nearest the shell's body size, titles at twice that.
+var MONO_EM = 9
+
+function monoSize(body) {
+  return MONO_EM * Math.max(1, Math.round((Number(body) || MONO_EM) / MONO_EM))
+}
+
+// How many characters of Monocraft at `size` fit across `width`.
+function monoColumns(width, size) {
+  return Math.max(1, Math.floor((Number(width) || 0) / (size * 2 / 3) + 0.001))
+}
+
+// `text` broken into lines of at most `cols` characters for a monospaced
+// column: at spaces, and inside a long name (alsa_output.usb-Focusrite_...)
+// after one of _ . - / : or between the humps of a camelCase run, so a raw
+// name breaks where it has joints, never in the middle of a word. Only a run
+// with no joint longer than a line is cut.
+function wrapName(text, cols) {
+  text = String(text || "")
+  if (!(cols >= 2) || text.length <= cols) return text
+  var lines = []
+  var line = ""
+  function put(word) {
+    if (line === "") line = word
+    else if (line.length + 1 + word.length <= cols) line += " " + word
+    else { lines.push(line); line = word }
+  }
+  var words = text.split(/\s+/).filter(function(w) { return w !== "" })
+  for (var i = 0; i < words.length; i++) {
+    var word = words[i]
+    if (word.length <= cols) { put(word); continue }
+    if (line !== "") { lines.push(line); line = "" }
+    while (word.length > cols) {
+      var cut = -1
+      // A separator first; a camelCase hump only where there is none.
+      for (var j = cols; j >= 1 && cut < 0; j--) if ("_.-/:".indexOf(word.charAt(j - 1)) >= 0) cut = j
+      for (var k = cols; k >= 1 && cut < 0; k--) if (/[a-z0-9]/.test(word.charAt(k - 1)) && /[A-Z]/.test(word.charAt(k))) cut = k
+      if (cut < 0) cut = cols
+      lines.push(word.substring(0, cut))
+      word = word.substring(cut)
+    }
+    line = word
+  }
+  if (line !== "") lines.push(line)
+  return lines.join("\n")
+}
+
 // ---------------------------------------------------------------- prompt
 
 function escapeHtml(text) {
@@ -433,8 +485,11 @@ function escapeHtml(text) {
 // the whole line plus a cursor cell, the part not typed yet drawn clear, so a
 // word never wraps differently while it types. The cursor stands in for the
 // next character, except a space, which it would glue to the next word; once
-// typed, it blinks in the cell kept for it at the end.
-var CURSOR = "\u258C"
+// typed, it blinks in the cell kept for it at the end. An underscore, the
+// terminal's own cursor, because Monocraft has no block characters: a glyph
+// it lacks comes from a fallback font with taller lines, and the row would
+// grow and shrink as the cursor moved between lines.
+var CURSOR = "_"
 var CLEAR = "<font color=\"#00000000\">"
 
 function revealLine(line, typed, cursorOn) {

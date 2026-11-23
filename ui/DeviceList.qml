@@ -84,17 +84,17 @@ Grid {
       Text {
         id: pickName
         anchors.left: parent.left
-        anchors.leftMargin: list.host.roomPad + Style.font.title + Style.space(8)
+        anchors.leftMargin: list.host.snap(list.host.roomPad + Style.font.title + Style.space(8))
         anchors.right: check.left
         anchors.rightMargin: Style.space(6)
         anchors.verticalCenter: parent.verticalCenter
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
-        text: pick.modelData.label || "Unknown"
+        text: Model.wrapName(pick.modelData.label || "Unknown", Model.monoColumns(width, list.host.textSize))
         color: pick.current || pick.lit ? list.host.fg : list.host.dim
         font.family: list.host.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: pick.current
+        font.pixelSize: list.host.textSize
+        renderType: Text.NativeRendering
         onImplicitHeightChanged: Qt.callLater(list.measure)
         Component.onCompleted: Qt.callLater(list.measure)
       }

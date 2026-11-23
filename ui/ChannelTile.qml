@@ -37,7 +37,7 @@ Room {
     return service.appsIn(key)
   }
 
-  readonly property real bucketMargin: Style.space(3)
+  readonly property real bucketMargin: host.snap(Style.space(3))
   // One card's height, with the bucket's own margin.
   readonly property real bucketMin: Style.space(54)
   readonly property real bucketNeed: Math.max(bucketMin, cards.implicitHeight + bucketMargin * 2)
@@ -199,7 +199,8 @@ Room {
       text: Audio.bucketLine(tile.channelPresent, tile.dragging, tile.host.appCount)
       color: tile.host.dim
       font.family: tile.host.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: tile.host.textSize
+      renderType: Text.NativeRendering
     }
   }
 }

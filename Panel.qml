@@ -39,6 +39,12 @@ Panel {
   FontLoader { source: Qt.resolvedUrl("assets/fonts/Monocraft-Bold.ttf") }
   readonly property string shellFont: bar ? bar.fontFamily : Style.font.family
   readonly property string fontFamily: monocraft.status === FontLoader.Ready ? monocraft.name : shellFont
+  // Monocraft lands on the screen's pixels only at whole multiples of its
+  // nine-pixel grid (Model.monoSize), so the panel's own text comes in two
+  // sizes, never bold (its bold face grows off the grid): running text, and
+  // titles at twice that. One character is two thirds of the size across.
+  readonly property int textSize: Model.monoSize(Style.font.body)
+  readonly property int titleSize: textSize * 2
 
   // The mixer is wider than Omarchy's 380 so the four channels fit side by
   // side, each about as wide as an official panel's half row plus a figure.
@@ -57,8 +63,7 @@ Panel {
     id: titleProbe
     text: root.categories.reduce(function(a, c) { return c.title.length > a.length ? c.title : a }, "")
     font.family: root.fontFamily
-    font.pixelSize: Style.font.body
-    font.bold: true
+    font.pixelSize: root.textSize
   }
   // The widest a channel's figure gets: 100, with a mark beside it.
   BigFigure {
@@ -68,10 +73,13 @@ Panel {
     mark: "sliders-horizontal"
     fontFamily: root.shellFont
   }
-  readonly property real roomGap: Style.space(3)
-  readonly property real roomPad: Style.space(10)
+  // Spacing lands on whole device pixels, so the text inside starts on one
+  // and Monocraft's pixels stay square instead of picking up a grey seam.
+  function snap(v) { return Math.round(v * dpr) / dpr }
+  readonly property real roomGap: snap(Style.space(3))
+  readonly property real roomPad: snap(Style.space(10))
   readonly property real iconColumn: Math.round(Style.font.heading * 1.25)
-  readonly property real textInset: iconColumn + Style.space(10)
+  readonly property real textInset: snap(iconColumn + Style.space(10))
   readonly property real tileGap: roomGap
 
   readonly property int appCount: service ? service.appsModel.count : 0
@@ -739,6 +747,7 @@ Panel {
     palette: root.palette
     unit: root.pixelUnit
     fontFamily: root.fontFamily
+    textSize: root.textSize
   }
 
   // ---- panel --------------------------------------------------------------------
@@ -856,7 +865,7 @@ Panel {
               Row {
                 id: topRow
                 readonly property real outputWidth: root.hasInput
-                  ? (width - channelRow.tileWidth - root.roomGap * 2) / 2
+                  ? root.snap((width - channelRow.tileWidth - root.roomGap * 2) / 2)
                   : width - channelRow.tileWidth - root.roomGap
                 readonly property real rowHeight: Math.max(heroRoom.implicitHeight, outputTile.implicitHeight,
                   inputTile.visible ? inputTile.implicitHeight : 0)
@@ -962,7 +971,7 @@ Panel {
             // up along the bottom and a drop never has far to go.
             Row {
               id: channelRow
-              readonly property real tileWidth: (width - root.roomGap * 3) / 4
+              readonly property real tileWidth: Math.floor((width - root.roomGap * 3) / 4 * root.dpr) / root.dpr
               readonly property real tileHeight: Math.max(gameTile.implicitHeight, chatTile.implicitHeight,
                 mediaTile.implicitHeight, auxTile.implicitHeight)
               width: parent.width
@@ -1082,11 +1091,11 @@ Panel {
               width: Math.min(implicitWidth, Style.space(240))
               wrapMode: Text.Wrap
               textFormat: Text.PlainText
-              text: root.dragName
+              text: Model.wrapName(root.dragName, Model.monoColumns(Style.space(240), root.textSize))
               color: root.fg
               font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              font.bold: true
+              font.pixelSize: root.textSize
+              renderType: Text.NativeRendering
             }
 
             Text {
@@ -1096,7 +1105,8 @@ Panel {
               text: "to " + root.channelTitle(root.dropTarget === "master" ? "" : root.dropTarget)
               color: root.dim
               font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
+              font.pixelSize: root.textSize
+              renderType: Text.NativeRendering
             }
           }
         }

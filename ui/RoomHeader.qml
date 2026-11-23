@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import "Model.js" as Model
 
 // A room's first line: its pixel icon, the name over a line of state, and
 // the volume in the block face on the right. The chevron by the name says
@@ -32,16 +33,14 @@ Item {
   readonly property string longestWord: title.split(/\s+/).reduce(function(a, b) { return b.length > a.length ? b : a }, "")
   readonly property real titleNeed: Math.ceil(wordMetrics.advanceWidth) + Style.space(1)
     + (showChevron ? chevron.implicitWidth + Style.space(5) : 0)
-  // Too narrow even with the smallest figure (a very small screen): the name
-  // drops to the caption size, Monocraft's own pixel grid, and the chevron
-  // steps aside, rather than break inside a word.
+  // Too narrow even with the smallest figure (a very small screen): the
+  // chevron steps aside to give the name its room.
   readonly property bool cramped: labels.width + 0.5 < titleNeed
 
   TextMetrics {
     id: wordMetrics
     font.family: head.host.fontFamily
-    font.pixelSize: Style.font.body
-    font.bold: true
+    font.pixelSize: head.host.textSize
     text: head.longestWord
   }
 
@@ -78,11 +77,11 @@ Item {
         width: Math.min(implicitWidth, parent.width - room)
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
-        text: head.title
+        text: Model.wrapName(head.title, Model.monoColumns(parent.width - room, head.host.textSize))
         color: head.dimmed ? head.host.dim : head.host.fg
         font.family: head.host.fontFamily
-        font.pixelSize: head.cramped ? Style.font.caption : Style.font.body
-        font.bold: true
+        font.pixelSize: head.host.textSize
+        renderType: Text.NativeRendering
         onLineLaidOut: function(line) {
           if (!line.isLast) return
           lastRight = line.x + line.implicitWidth
@@ -113,7 +112,8 @@ Item {
       delay: head.delay
       color: head.host.dim
       font.family: head.host.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: head.host.textSize
+      renderType: Text.NativeRendering
     }
   }
 

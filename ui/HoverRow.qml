@@ -15,6 +15,10 @@ Rectangle {
   property color foreground: "white"
   property int unit: 2
   property string fontFamily: Style.font.family
+  property int textSize: Style.font.caption
+  // As wide as the row would be with its name on one line.
+  readonly property real needWidth: icon.x + icon.width + Style.space(6) + Math.ceil(nameMetrics.advanceWidth)
+    + Style.space(6) + markSlot.width + Style.space(5) + cells.width + Style.space(8) + level.width + Style.space(6)
   // Goes up as the card shows, to play the row's icons, `playDelay` ms in.
   property int play: 0
   property int playDelay: 0
@@ -44,10 +48,17 @@ Rectangle {
     anchors.verticalCenter: parent.verticalCenter
     textFormat: Text.PlainText
     wrapMode: Text.Wrap
-    text: hoverRow.entry.name
+    text: Model.wrapName(hoverRow.entry.name, Model.monoColumns(width, hoverRow.textSize))
     color: hoverRow.foreground
     font.family: hoverRow.fontFamily
-    font.pixelSize: Style.font.bodySmall
+    font.pixelSize: hoverRow.textSize
+    renderType: Text.NativeRendering
+  }
+
+  TextMetrics {
+    id: nameMetrics
+    font: name.font
+    text: hoverRow.entry.name || ""
   }
 
   // The mark (muted, an equalizer at work) in a column of its own

@@ -23,6 +23,13 @@ PopupWindow {
   property var palette: ({})
   property int unit: 2
   property string fontFamily: Style.font.family
+  property int textSize: Style.font.caption
+  // The card takes the width its longest name needs on one line, between
+  // the shell tooltip's 280 and 460, so a device name does not stack a word
+  // a line.
+  readonly property var longestRow: rows.reduce(function(a, r) {
+    return String(r && r.name || "").length > String(a && a.name || "").length ? r : a
+  }, rows.length ? rows[0] : ({}))
 
   readonly property color foreground: Commons.Color.tooltip.text
   readonly property real gap: 6
@@ -75,7 +82,7 @@ PopupWindow {
   BorderSurface {
     id: frame
     opacity: card.revealed ? 1 : 0
-    implicitWidth: Style.space(280)
+    implicitWidth: Math.round(Math.max(Style.space(280), Math.min(Style.space(460), probe.needWidth + Style.space(8) * 2)))
     implicitHeight: list.implicitHeight + Style.space(8) * 2
     color: Commons.Color.tooltip.background
     borderSpec: Border.surfaceSpec("tooltip", "border", Commons.Color.tooltip.border, 1)
@@ -102,6 +109,7 @@ PopupWindow {
           foreground: card.foreground
           unit: card.unit
           fontFamily: card.fontFamily
+          textSize: card.textSize
         }
       }
 
@@ -115,8 +123,20 @@ PopupWindow {
         text: card.note
         color: Qt.darker(card.foreground, 1.4)
         font.family: card.fontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: card.textSize
+        renderType: Text.NativeRendering
       }
     }
+  }
+
+  // Measures the longest row, for the card's width.
+  HoverRow {
+    id: probe
+    visible: false
+    width: 1
+    entry: ({ name: card.longestRow.name || "", icon: card.longestRow.icon || "", mark: "sliders-horizontal", volume: 1 })
+    unit: card.unit
+    fontFamily: card.fontFamily
+    textSize: card.textSize
   }
 }

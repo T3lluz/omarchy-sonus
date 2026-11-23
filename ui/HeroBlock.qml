@@ -69,7 +69,8 @@ Item {
     textFormat: Text.PlainText
     text: "X\nX"
     font.family: hero.host.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: hero.host.textSize
+    renderType: Text.NativeRendering
   }
 
   Item {
@@ -102,7 +103,7 @@ Item {
   Column {
     id: labels
     anchors.left: mark.right
-    anchors.leftMargin: Style.space(10)
+    anchors.leftMargin: hero.host.snap(Style.space(10))
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(2)
@@ -122,8 +123,8 @@ Item {
         text: hero.title
         color: hero.host.fg
         font.family: hero.host.fontFamily
-        font.pixelSize: Style.font.title
-        font.bold: true
+        font.pixelSize: hero.host.titleSize
+        renderType: Text.NativeRendering
       }
 
       Row {
@@ -147,23 +148,26 @@ Item {
       Text {
         id: promptSign
         textFormat: Text.PlainText
-        text: "\u276F"
+        // In Monocraft itself, so the line keeps the font's own height.
+        text: "\u203A"
         color: hero.lineColor
         font.family: hero.host.fontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: hero.host.textSize
+        renderType: Text.NativeRendering
       }
 
       Text {
         id: lineText
         anchors.left: promptSign.right
-        anchors.leftMargin: Style.space(6)
+        anchors.leftMargin: hero.host.snap(Style.space(6))
         anchors.right: parent.right
         wrapMode: Text.Wrap
         textFormat: Text.StyledText
         text: hero.revealed
         color: hero.lineColor
         font.family: hero.host.fontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: hero.host.textSize
+        renderType: Text.NativeRendering
       }
     }
   }
