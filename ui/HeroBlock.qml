@@ -19,7 +19,9 @@ Item {
   property real markSize: Style.font.display
   property string title: ""
   property string line: ""
-  property color lineColor: Qt.darker(host.fg, 1.3)
+  // The prompt a step quieter than the title, toward the background, so it
+  // reads on light themes too.
+  property color lineColor: Qt.tint(host.fg, Qt.rgba(host.bg.r, host.bg.g, host.bg.b, 0.25))
   // A line that answers the pointer (a drag, a fader) shows at once.
   property bool instant: false
   default property alias actions: actionRow.children
@@ -63,14 +65,13 @@ Item {
   }
 
   // Measures two real lines of the prompt, for the room it always keeps.
-  Text {
+  MonoText {
+    step: "small"
+    fontFamily: hero.host.fontFamily
     id: twoLines
     visible: false
     textFormat: Text.PlainText
     text: "X\nX"
-    font.family: hero.host.fontFamily
-    font.pixelSize: hero.host.textSize
-    renderType: Text.NativeRendering
   }
 
   Item {
@@ -112,7 +113,9 @@ Item {
       width: parent.width
       height: Math.max(titleText.implicitHeight, actionRow.implicitHeight)
 
-      Text {
+      MonoText {
+        step: "title"
+        fontFamily: hero.host.fontFamily
         id: titleText
         anchors.left: parent.left
         anchors.right: actionRow.left
@@ -122,9 +125,6 @@ Item {
         textFormat: Text.PlainText
         text: hero.title
         color: hero.host.fg
-        font.family: hero.host.fontFamily
-        font.pixelSize: hero.host.titleSize
-        renderType: Text.NativeRendering
       }
 
       Row {
@@ -145,18 +145,19 @@ Item {
       width: parent.width
       height: Math.max(lineText.implicitHeight, twoLines.implicitHeight)
 
-      Text {
+      MonoText {
+        step: "small"
+        fontFamily: hero.host.fontFamily
         id: promptSign
         textFormat: Text.PlainText
         // In Monocraft itself, so the line keeps the font's own height.
         text: "\u203A"
         color: hero.lineColor
-        font.family: hero.host.fontFamily
-        font.pixelSize: hero.host.textSize
-        renderType: Text.NativeRendering
       }
 
-      Text {
+      MonoText {
+        step: "small"
+        fontFamily: hero.host.fontFamily
         id: lineText
         anchors.left: promptSign.right
         anchors.leftMargin: hero.host.snap(Style.space(6))
@@ -165,9 +166,6 @@ Item {
         textFormat: Text.StyledText
         text: hero.revealed
         color: hero.lineColor
-        font.family: hero.host.fontFamily
-        font.pixelSize: hero.host.textSize
-        renderType: Text.NativeRendering
       }
     }
   }

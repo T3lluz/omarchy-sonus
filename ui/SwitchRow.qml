@@ -25,6 +25,14 @@ Item {
   implicitHeight: Math.max(toggle.implicitHeight, labels.implicitHeight)
   opacity: interactive ? 1 : 0.45
 
+  // A faint fill under the pointer, as the rooms' rows have.
+  Rectangle {
+    anchors.fill: parent
+    radius: Style.cornerRadius
+    color: Qt.rgba(row.foreground.r, row.foreground.g, row.foreground.b, 0.06)
+    visible: labelMouse.containsMouse
+  }
+
   Glyph {
     id: iconBox
     anchors.left: parent.left
@@ -48,35 +56,37 @@ Item {
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(1)
 
-    Text {
+    MonoText {
       width: parent.width
+      step: "body"
       textFormat: Text.PlainText
       text: row.label
       color: row.foreground
       elide: Text.ElideRight
-      font.family: row.fontFamily
-      font.pixelSize: Style.font.body
+      fontFamily: row.fontFamily
     }
 
-    Text {
+    MonoText {
       width: parent.width
       visible: row.hint !== ""
+      step: "small"
       textFormat: Text.PlainText
       text: row.hint
       color: row.foreground
       opacity: 0.55
       wrapMode: Text.Wrap
-      font.family: row.fontFamily
-      font.pixelSize: Style.font.caption
+      fontFamily: row.fontFamily
     }
   }
 
   MouseArea {
+    id: labelMouse
     anchors.left: parent.left
     anchors.right: toggle.left
     anchors.top: parent.top
     anchors.bottom: parent.bottom
     enabled: row.interactive && !row.busy
+    hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
     onClicked: row.toggled()
   }

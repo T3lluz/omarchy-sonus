@@ -11,6 +11,7 @@ Out:
   {"type": "update", ...}   update check results
   {"type": "notice", ...}   one-line messages for the status area
   {"type": "output", ...}   the output device just changed: its label and form
+  {"type": "cava", ...}     whether cava is there for the visualizer, or being installed
 
 In: see Engine.handle().
 """
@@ -24,7 +25,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import effects, legacy, notices, pipewire, profiles, updater
+from . import cava, effects, legacy, notices, pipewire, profiles, updater
 from . import eq as eqmod
 from .config import CHANNELS, SINK_CHANNELS, SINK_KEYS, load_settings, save_settings
 from .graph import GraphProcess
@@ -35,6 +36,21 @@ EQ_PERSIST_DELAY = 0.8
 GRAPH_RETRY = 6.0
 UPDATE_FIRST_CHECK = 60.0
 UPDATE_INTERVAL = 6 * 3600.0
+
+
+# What the status line says when a command fails; the exception goes to stderr.
+FAILED_COMMANDS = {
+    "selectOutput": "Couldn't switch output",
+    "selectInput": "Couldn't switch input",
+    "volume": "Couldn't change the volume",
+    "mute": "Couldn't change the mute",
+    "route": "Couldn't move the app",
+    "eq": "Couldn't change the equalizer",
+    "installCava": "Couldn't install cava",
+    "updateApply": "Couldn't start the update",
+    "setting": "Couldn't save that setting",
+    "takeover": "Couldn't take over from the desktop app",
+}
 
 
 class Writer(threading.Thread):
@@ -81,6 +97,15 @@ class Engine:
         self._hold_until = 0.0
         self._skip_apply_once = False
         self.profile_epoch = 0
+        # A finished update is restarting the shell; this engine is about to end.
+        self._restarting = False
+        self._cava_busy = False
+        self._cava_message = ""
+        # The message says all there is to do (pacman failed), so the settings
+        # page adds no "Install cava to see the visualizer."
+        self._cava_final = False
+        self._cava_retries = 0
+        self._poll_failing = False
         self.eq_applied: dict[str, tuple] = {}
         self.graph = GraphProcess()
         self.snap = pipewire.Snapshot()
@@ -119,6 +144,7 @@ class Engine:
                 "routes": dict(self.routes()),
                 "eq": {key: state.to_dict() for key, state in self.eqs.items()},
                 "manageGraph": bool(self.settings.get("manage_graph", True)),
+                "visualizer": bool(self.settings.get("visualizer", True)),
                 "pos": self.settings.get("panel_pos"),
             })
 
@@ -205,9 +231,14 @@ class Engine:
                 continue
             wanted = (node.node_id, state.signature())
             if self.eq_applied.get(channel.key) != wanted:
-                self.eq_applied[channel.key] = wanted
-                node_id = node.node_id
-                self._writer.submit(f"eq:{channel.key}", lambda n=node_id, s=state: pipewire.set_channel_eq(n, s))
+                self._writer.submit(f"eq:{channel.key}", lambda k=channel.key, w=wanted, n=node.node_id, s=state: self._push_eq(k, w, n, s))
+
+    def _push_eq(self, key: str, wanted: tuple, node_id: int, state) -> None:
+        """Counts as applied only when pw-cli took it; a failed push (the node
+        not ready yet) is tried again on the next poll."""
+        if pipewire.set_channel_eq(node_id, state):
+            with self._state_lock:
+                self.eq_applied[key] = wanted
 
     def poll_once(self) -> None:
         was_legacy = self.legacy
@@ -245,8 +276,12 @@ class Engine:
         while True:
             try:
                 self.poll_once()
+                self._poll_failing = False
             except Exception as exc:  # keep routing alive whatever happens
-                self.notice(f"Poll failed: {exc}", error=True)
+                print(f"sonus: poll failed: {exc!r}", file=sys.stderr, flush=True)
+                if not self._poll_failing:
+                    self._poll_failing = True
+                    self.notice("Lost track of PipeWire, retrying", error=True)
             self._wake.wait(ACTIVE_INTERVAL if self.active else IDLE_INTERVAL)
             self._wake.clear()
 
@@ -260,6 +295,9 @@ class Engine:
         if cmd == "active":
             self.active = bool(msg.get("value"))
             self._wake.set()
+            # A cava installed by hand shows up the next time the panel opens.
+            if self.active:
+                self.emit_cava()
         elif cmd == "refresh":
             self._wake.set()
         elif cmd == "volume":
@@ -303,6 +341,8 @@ class Engine:
         elif cmd == "look":
             # Style.space(40), the shell's picture slot, for the badges.
             notices.set_slot(msg.get("slot"))
+        elif cmd == "installCava":
+            threading.Thread(target=self.install_cava, kwargs={"asked": True}, daemon=True).start()
         elif cmd == "previewNotices":
             version = updater.installed_version(self.plugin_dir)
             threading.Thread(target=notices.preview, args=(version,), daemon=True).start()
@@ -350,10 +390,10 @@ class Engine:
                 if self.manage():
                     missing = True
                 continue
-            self.eq_applied[key] = (node.node_id, state.signature())
+            wanted = (node.node_id, state.signature())
             self._writer.submit(
                 f"eq:{key}",
-                lambda n=node.node_id, s=state: pipewire.set_channel_eq(n, s),
+                lambda k=key, w=wanted, n=node.node_id, s=state: self._push_eq(k, w, n, s),
             )
             mix = profile.channels.get(key) or profiles.Mix()
             self._push_volume(node.node_id, mix.volume)
@@ -515,7 +555,12 @@ class Engine:
         self._pool.submit(fn, node_id, name)
 
     def _select_output(self, node_id: int, name: str) -> None:
-        pipewire.set_default_output(node_id, name)
+        try:
+            pipewire.set_default_output(node_id, name)
+        except Exception as exc:
+            print(f"sonus: switching output: {exc!r}", file=sys.stderr, flush=True)
+            self.notice("Couldn't switch output", error=True)
+            return
         try:
             snap = pipewire.snapshot()
             if not self.legacy:
@@ -528,7 +573,12 @@ class Engine:
         self._wake.set()
 
     def _select_input(self, node_id: int, name: str) -> None:
-        pipewire.set_default_input(node_id, name)
+        try:
+            pipewire.set_default_input(node_id, name)
+        except Exception as exc:
+            print(f"sonus: switching input: {exc!r}", file=sys.stderr, flush=True)
+            self.notice("Couldn't switch input", error=True)
+            return
         self._wake.set()
 
     def route(self, key: str, channel_key: str) -> None:
@@ -573,9 +623,9 @@ class Engine:
                 profile.eqs[key] = state
             node = self.snap.channels.get(key)
             if node is not None:
-                self.eq_applied[key] = (node.node_id, state.signature())
+                wanted = (node.node_id, state.signature())
                 node_id = node.node_id
-                self._writer.submit(f"eq:{key}", lambda: pipewire.set_channel_eq(node_id, state))
+                self._writer.submit(f"eq:{key}", lambda: self._push_eq(key, wanted, node_id, state))
         self.persist_later()
 
     def set_setting(self, key: str, value) -> None:
@@ -590,6 +640,11 @@ class Engine:
             else:
                 self._pool.submit(self.graph.stop)
             self._wake.set()
+        elif key == "visualizer":
+            with self._state_lock:
+                self.settings["visualizer"] = bool(value)
+            self.persist()
+            self.emit_cava()
         elif key == "panel_pos":
             with self._state_lock:
                 self.settings["panel_pos"] = value if isinstance(value, dict) else None
@@ -668,9 +723,14 @@ class Engine:
             # reload keeps the QML it compiled, and the old panel would stay on
             # screen reading the new version number. The restart closes the
             # panel, so this is said on the desktop.
-            notices.updated(version, bool(result.get("stashed")))
+            cava_next = cava.will_ask(self.visualizer_on())
+            if cava_next:
+                cava.mark_pending(version)
+            notices.updated(version, bool(result.get("stashed")), cava_next=cava_next)
+            self._restarting = True
             if updater.restart_shell():
                 return
+            self._restarting = False
             self.notice(text + ". Run: omarchy restart shell")
             self.update_check()
         elif result.get("current"):
@@ -700,6 +760,71 @@ class Engine:
         else:
             updater.clear_result()
 
+    # ----- cava -----------------------------------------------------------
+
+    def visualizer_on(self) -> bool:
+        with self._state_lock:
+            return bool(self.settings.get("visualizer", True))
+
+    def emit_cava(self) -> None:
+        self.emit({"type": "cava", "installed": cava.installed(), "installing": self._cava_busy,
+                   "message": self._cava_message, "final": self._cava_final})
+
+    def install_cava(self, asked: bool = False) -> None:
+        """Install cava. `asked` is the settings page's Install button, which
+        always may ask, even after a no; otherwise this is the ask right after
+        an update."""
+        if self._cava_busy:
+            return
+        if asked:
+            cava.forget_decline()
+        self._cava_busy = True
+        self._cava_message = ""
+        self._cava_final = False
+        self.emit_cava()
+        try:
+            result = cava.install()
+        finally:
+            self._cava_busy = False
+        cava.record(result, updater.installed_version(self.plugin_dir))
+        self._cava_message = result.message
+        self._cava_final = not result.ok and result.prompted and not result.declined
+        if result.no_agent and not asked and self._cava_retries < 3:
+            # The shell's polkit agent is not up yet: no prompt showed, so try
+            # again in a minute rather than give up.
+            self._cava_retries += 1
+            threading.Timer(60.0, self.cava_startup).start()
+        self.emit_cava()
+
+    def cava_startup(self) -> None:
+        """Ask for cava only right after an update said it would (cava.py).
+        Not from an engine that is restarting the shell after that update:
+        the shell is the polkit agent, so its prompt would go with it. The
+        next engine asks."""
+        if self._restarting:
+            return
+        if cava.running():
+            self._cava_busy = True
+            self.emit_cava()
+            cava.wait_running()
+            self._cava_busy = False
+            self.emit_cava()
+            return
+        if not cava.should_ask(self.visualizer_on()):
+            return
+        # The shell has just started, and its polkit agent with it.
+        time.sleep(4.0)
+        if self._restarting or not cava.should_ask(self.visualizer_on()):
+            return
+        self.install_cava()
+
+    def startup(self) -> None:
+        # First, so the panel knows about cava even while an update is
+        # still being waited on below.
+        self.emit_cava()
+        self.resume_update()
+        self.cava_startup()
+
     # ----- main -----------------------------------------------------------
 
     def run(self) -> int:
@@ -710,7 +835,7 @@ class Engine:
                    "local": updater.local_commit(self.plugin_dir)})
         self._pool.submit(self.setup)
         threading.Thread(target=self.poll_loop, daemon=True).start()
-        threading.Thread(target=self.resume_update, daemon=True).start()
+        threading.Thread(target=self.startup, daemon=True).start()
         threading.Thread(target=self.update_loop, daemon=True).start()
         for line in sys.stdin:
             line = line.strip()
@@ -724,11 +849,44 @@ class Engine:
                 try:
                     self.handle(msg)
                 except Exception as exc:
-                    self.notice(f"{msg.get('cmd')}: {exc}", error=True)
+                    print(f"sonus: {msg.get('cmd')}: {exc!r}", file=sys.stderr, flush=True)
+                    self.notice(FAILED_COMMANDS.get(str(msg.get("cmd")), "Something went wrong, try again"), error=True)
         # stdin closed: the shell is reloading or quitting. Save, leave the
         # graph running for the next engine to adopt.
         self.persist()
         return 0
+
+
+# The block Service.qml keeps in ~/.config/hypr/bindings.lua (ui/Shortcut.js).
+SHORTCUT_BEGIN = "-- >>> sonus shortcut"
+SHORTCUT_END = "-- <<< sonus shortcut"
+
+
+def bindings_path() -> Path:
+    return Path.home() / ".config" / "hypr" / "bindings.lua"
+
+
+def strip_shortcut(path: Path | None = None) -> bool:
+    """Take Sonus's Ctrl+Alt+V block out of Hyprland's bindings, for removing
+    the plugin. True if there was one."""
+    path = path or bindings_path()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    start = text.find(SHORTCUT_BEGIN)
+    if start < 0:
+        return False
+    end = text.find(SHORTCUT_END, start)
+    end = len(text) if end < 0 else end + len(SHORTCUT_END)
+    before = text[:start].rstrip("\n")
+    after = text[end:].lstrip("\n")
+    rest = before + ("\n\n" + after if after else "\n") if before else after
+    try:
+        path.write_text(rest, encoding="utf-8")
+    except OSError:
+        return False
+    return True
 
 
 def main(argv: list[str]) -> int:
@@ -738,7 +896,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--plugin-dir", default=str(Path(__file__).resolve().parents[2]))
     parser.add_argument("--plugin-id", default="io.github.t3lluz.sonus")
     parser.add_argument("--stop-graph", action="store_true",
-                        help="stop the virtual channels and exit")
+                        help="stop the virtual channels, take out the Ctrl+Alt+V bind and exit "
+                             "(run before removing the plugin)")
     parser.add_argument("--snapshot", action="store_true",
                         help="print one graph snapshot as JSON and exit")
     parser.add_argument("--apply-update", action="store_true",
@@ -748,6 +907,7 @@ def main(argv: list[str]) -> int:
         return 0 if updater.run(Path(args.plugin_dir), args.plugin_id).get("ok") else 1
     if args.stop_graph:
         GraphProcess().stop()
+        strip_shortcut()
         return 0
     if args.snapshot:
         print(json.dumps(pipewire.snapshot().to_dict(), indent=2))

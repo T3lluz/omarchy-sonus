@@ -25,5 +25,15 @@ jobs:
         run: node tests/model.test.js
       - name: Shortcut bind block
         run: node tests/shortcut.test.js
+      - name: Icon motion
+        run: node tests/motion.test.js
+      - name: README badge matches the manifest
+        run: |
+          python3 - <<'PY'
+          import json, re
+          version = json.load(open("manifest.json"))["version"]
+          badge = re.search(r"badge/v([0-9.]+)-", open("README.md").read())
+          assert badge and badge.group(1) == version, f"README badge {badge and badge.group(1)} != manifest {version}"
+          PY
       - name: Engine tests
         run: python3 -B -m unittest discover tests

@@ -35,7 +35,7 @@ CursorSurface {
     fontFamily: tile.fontFamily
   }
 
-  Text {
+  MonoText {
     id: labelText
     anchors.left: iconBox.right
     anchors.leftMargin: Style.space(8)
@@ -47,8 +47,8 @@ CursorSurface {
     color: tile.foreground
     opacity: tile.checked ? 1 : 0.8
     elide: Text.ElideRight
-    font.family: tile.fontFamily
-    font.pixelSize: Style.font.bodySmall
+    step: "small"
+    fontFamily: tile.fontFamily
   }
 
   ToggleSwitch {

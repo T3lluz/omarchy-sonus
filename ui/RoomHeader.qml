@@ -15,12 +15,17 @@ Item {
   property string status: ""
   property bool showFigure: true
   property var value: null
+  // What `value` is counting up to, for the figure's width.
+  property var target: value
   property string mark: ""
   property bool figureDimmed: false
   property bool showChevron: true
   property bool expanded: false
   property bool dimmed: false
   property int delay: 0
+  // The family's type (MonoText): the name in the body step in the text
+  // colour, the state under it in the small step, dimmed. Never bold.
+
   // Goes up each time the icon should act itself out (Motion.js).
   property int tick: 0
   readonly property alias iconItem: iconBox
@@ -31,18 +36,11 @@ Item {
   // What the name's column needs so that no word in it breaks: its longest
   // word, with the chevron after it. The figure gives up room to keep that.
   readonly property string longestWord: title.split(/\s+/).reduce(function(a, b) { return b.length > a.length ? b : a }, "")
-  readonly property real titleNeed: Math.ceil(wordMetrics.advanceWidth) + Style.space(1)
+  readonly property real titleNeed: Math.ceil(longestWord.length * titleText.advance) + Style.space(1)
     + (showChevron ? chevron.implicitWidth + Style.space(5) : 0)
   // Too narrow even with the smallest figure (a very small screen): the
   // chevron steps aside to give the name its room.
   readonly property bool cramped: labels.width + 0.5 < titleNeed
-
-  TextMetrics {
-    id: wordMetrics
-    font.family: head.host.fontFamily
-    font.pixelSize: head.host.textSize
-    text: head.longestWord
-  }
 
   PixelIcon {
     id: iconBox
@@ -68,7 +66,9 @@ Item {
       width: parent.width
       height: titleText.height
 
-      Text {
+      MonoText {
+        step: "body"
+        fontFamily: head.host.fontFamily
         id: titleText
         readonly property real room: chevron.visible ? chevron.width + Style.space(5) : 0
         property real lastRight: 0
@@ -77,11 +77,8 @@ Item {
         width: Math.min(implicitWidth, parent.width - room)
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
-        text: Model.wrapName(head.title, Model.monoColumns(parent.width - room, head.host.textSize))
+        text: Model.wrapName(head.title, Model.monoColumns(parent.width - room, advance))
         color: head.dimmed ? head.host.dim : head.host.fg
-        font.family: head.host.fontFamily
-        font.pixelSize: head.host.textSize
-        renderType: Text.NativeRendering
         onLineLaidOut: function(line) {
           if (!line.isLast) return
           lastRight = line.x + line.implicitWidth
@@ -104,6 +101,8 @@ Item {
     }
 
     Decode {
+      step: "small"
+      fontFamily: head.host.fontFamily
       host: head.host
       width: parent.width
       visible: value !== ""
@@ -111,9 +110,6 @@ Item {
       value: head.status
       delay: head.delay
       color: head.host.dim
-      font.family: head.host.fontFamily
-      font.pixelSize: head.host.textSize
-      renderType: Text.NativeRendering
     }
   }
 
@@ -123,6 +119,8 @@ Item {
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
     value: head.value
+    target: head.target
+    dimColor: head.host.dim
     tone: head.tone
     foreground: head.host.fg
     mark: head.mark

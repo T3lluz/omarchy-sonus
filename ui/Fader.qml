@@ -109,5 +109,13 @@ Item {
       fader.service.setVolume(fader.key, v)
     }
     onRightClicked: fader.toggleMute()
+
+    // When the mixer scrolls, the rooms leave the wheel to it; over the
+    // meter itself the wheel still sets the level.
+    WheelHandler {
+      enabled: fader.present && !!fader.host.mixerScrolls
+      acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+      onWheel: function(event) { fader.host.wheelVolume(fader.key, event.angleDelta.y) }
+    }
   }
 }

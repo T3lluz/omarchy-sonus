@@ -45,6 +45,14 @@ def _run(args: list[str], timeout: float = _TIMEOUT) -> str:
     return result.stdout if result.returncode == 0 else ""
 
 
+def _run_ok(args: list[str], timeout: float = _TIMEOUT) -> bool:
+    """Whether the command exited 0. pw-cli set-param prints nothing either way."""
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 @dataclass
 class NodeState:
     node_id: int
@@ -554,8 +562,7 @@ def set_channel_eq(node_id: int, state: eqmod.ChannelEq) -> bool:
     The Props "params" values reach the DSP even though pw-cli's readback of
     that param can show stale values (verified with a signal-level test).
     """
-    out = _run(["pw-cli", "set-param", str(node_id), "Props", _eq_payload(state)])
-    return bool(out)
+    return _run_ok(["pw-cli", "set-param", str(node_id), "Props", _eq_payload(state)])
 
 
 def retarget_channel_outputs(snap: Snapshot) -> None:

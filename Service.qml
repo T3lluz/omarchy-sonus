@@ -5,6 +5,7 @@ import Quickshell.Services.Pipewire
 import qs.Commons
 import "ui/Eq.js" as Eq
 import "ui/Glyphs.js" as Glyphs
+import "ui/Model.js" as Model
 import "ui/Shortcut.js" as Shortcut
 
 // The plugin's always-on half. It runs the engine (bin/sonus-engine), which
@@ -205,7 +206,13 @@ Scope {
       for (var k in stored) next[k] = Eq.normalized(stored[k])
       eqs = next
       manageGraph = msg.manageGraph !== false
+      visualizer = msg.visualizer !== false
       configLoaded = true
+    } else if (msg.type === "cava") {
+      cavaInstalled = msg.installed === true
+      cavaInstalling = msg.installing === true
+      cavaMessage = msg.message || ""
+      cavaMessageFinal = msg.final === true
     } else if (msg.type === "update") {
       var u = {}
       for (var a in update) u[a] = update[a]
@@ -313,9 +320,11 @@ Scope {
     if (ids.length) send({ cmd: "mute", ids: ids, value: !!value })
   }
 
+  // The wheel and the keys step on the meter's 5% grid, so a level set by
+  // hand at 37% lands on 40 or 35, not 42.
   function adjustVolume(key, delta) {
     if (mutedOf(key) && delta > 0) setMute(key, false)
-    setVolume(key, volumeOf(key) + delta)
+    setVolume(key, Math.max(0, Math.min(1, Math.round((volumeOf(key) + delta) * 20) / 20)))
   }
 
   function route(key, channel) {
@@ -342,6 +351,18 @@ Scope {
   }
 
   function takeOver() { send({ cmd: "takeover" }) }
+
+  function setVisualizer(value) {
+    visualizer = value
+    send({ cmd: "setting", key: "visualizer", value: value })
+  }
+
+  function installCava() {
+    if (cavaInstalling) return
+    cavaInstalling = true
+    cavaMessage = ""
+    send({ cmd: "installCava" })
+  }
 
   function selectOutput(id, name) { send({ cmd: "selectOutput", id: id, name: name }) }
 
@@ -425,6 +446,121 @@ Scope {
       if (root.bindingsKnown) root.ensureShortcut()
     }
     onFileChanged: reload()
+  }
+
+  // ---- the spectrum ----------------------------------------------------------
+  // cava draws the title room's spectrum. It runs only while a panel shows
+  // the mixer, with as many bars and steps as that panel's room fits, and
+  // listens to the default output's monitor, so it hears every channel after
+  // the mix. The engine installs cava (engine/sonus/cava.py) and says here
+  // whether it is there.
+
+  property bool visualizer: true
+  property bool cavaInstalled: false
+  property bool cavaInstalling: false
+  property string cavaMessage: ""
+  // The message is the whole story (pacman failed): nothing to add.
+  property bool cavaMessageFinal: false
+  // Set by the panel that is open: the grid its title room fits.
+  property int spectrumBars: 0
+  property int spectrumRows: 0
+  // Something is coming out of an app; with nothing playing, cava rests.
+  readonly property bool anyPlaying: {
+    appsVersion
+    for (var key in appInfo) if (appInfo[key] && appInfo[key].playing) return true
+    return false
+  }
+  // A panel shows the mixer (it sets spectrumBars to 0 on its other pages).
+  readonly property bool spectrumWanted: opened && anyPlaying
+  // One level a bar, 0..spectrumRows.
+  property var spectrum: []
+
+  readonly property bool spectrumOn: spectrumWanted && visualizer && cavaInstalled
+    && !Style.reduceMotion && spectrumBars > 1 && spectrumRows > 0
+
+  // cava reads its config from a pipe, so nothing is written anywhere. 30
+  // frames a second and a light smoothing (cava's default is 77) keep it on
+  // the beat at half the cost of 60: bands jump up with the sound and fall
+  // back a little softer.
+  // 15 Hz to 15 kHz covers what music uses, from the lowest bass to the top
+  // of the cymbals.
+  readonly property string cavaConfig: [
+    "[general]",
+    "bars = " + spectrumBars,
+    "autosens = 0",
+    "sensitivity = " + Model.SPECTRUM.SENSITIVITY,
+    "framerate = " + Model.SPECTRUM.FPS,
+    "lower_cutoff_freq = 15",
+    "higher_cutoff_freq = 15000",
+    "[input]",
+    "method = pipewire",
+    "source = auto",
+    "[output]",
+    "method = raw",
+    "channels = mono",
+    "mono_option = average",
+    "raw_target = /dev/stdout",
+    "data_format = ascii",
+    "ascii_max_range = " + Model.SPECTRUM.RANGE,
+    "bar_delimiter = 59",
+    "frame_delimiter = 10",
+    "[smoothing]",
+    "noise_reduction = 50",
+    ""
+  ].join("\n")
+
+  // Scaled to the music's own level (Model.spectrumFrame), so a quiet song
+  // fills the room as a loud one does.
+  property real spectrumCeiling: 0
+
+  function takeFrame(line) {
+    var frame = Model.spectrumFrame(line, spectrumBars, spectrumRows, spectrumCeiling)
+    spectrumCeiling = frame.ceiling
+    var next = frame.levels
+    var same = spectrum.length === next.length
+    for (var i = 0; same && i < next.length; i++) if (spectrum[i] !== next[i]) same = false
+    // Silence is the same frame over and over; nothing needs to redraw.
+    if (!same) spectrum = next
+  }
+
+  // A new size needs a new cava: off for a moment, then on with the new
+  // config.
+  property bool cavaPause: false
+  onCavaConfigChanged: if (cava.running) { cavaPause = true; cavaPauseTimer.restart() }
+
+  Timer {
+    id: cavaPauseTimer
+    interval: 120
+    onTriggered: root.cavaPause = false
+  }
+
+  Process {
+    id: cava
+    command: ["bash", "-c", "exec cava -p <(printf '%s' \"$1\")", "sonus-cava", root.cavaConfig]
+    running: root.spectrumOn && !root.cavaPause
+    stdout: SplitParser {
+      splitMarker: "\n"
+      onRead: function(line) { if (root) root.takeFrame(line) }
+    }
+    stderr: SplitParser {
+      splitMarker: "\n"
+      onRead: function(line) { if (line.trim() !== "") console.warn("sonus: cava: " + line) }
+    }
+    onRunningChanged: if (!running) { root.spectrum = []; root.spectrumCeiling = 0 }
+    // cava ended on its own while it was still wanted (PipeWire restarted, a
+    // crash): pause and start it again in a couple of seconds.
+    onExited: function(code, status) {
+      if (!root.spectrumOn || root.cavaPause) return
+      console.warn("sonus: cava exited (" + code + "), starting it again")
+      root.cavaPause = true
+      cavaRetry.restart()
+    }
+  }
+
+  Timer {
+    id: cavaRetry
+    interval: 2000
+    onTriggered: root.cavaPause = false
   }
 
   // ---- the engine process -----------------------------------------------------
@@ -539,7 +675,16 @@ Scope {
         mixTarget: root.mixTarget,
         version: root.version,
         update: root.update.state,
-        updateVersion: root.update.version || null
+        updateVersion: root.update.version || null,
+        visualizer: {
+          enabled: root.visualizer,
+          cava: root.cavaInstalled,
+          installing: root.cavaInstalling,
+          running: cava.running,
+          bars: root.spectrumBars,
+          rows: root.spectrumRows,
+          message: root.cavaMessage || null
+        }
       })
     }
   }

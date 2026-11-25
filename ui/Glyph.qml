@@ -16,7 +16,20 @@ Item {
   property color color: Commons.Color.foreground
   property string fontFamily: Style.font.family
 
-  readonly property string pixel: Model.pixelFor(icon)
+  // The kit's Notice no longer turns its icon while it works (a smooth turn
+  // smears pixel art), so this does, as Server Dashboard's Glyph does: a
+  // busy notice shows the reload arrows stepping round in quarter turns.
+  readonly property bool busy: !!(parent && parent.busy === true)
+  readonly property string pixel: busy ? "reload" : Model.pixelFor(icon)
+  property int quarter: 0
+
+  Timer {
+    interval: 220
+    repeat: true
+    running: glyph.busy && glyph.visible && !Style.reduceMotion
+    onTriggered: glyph.quarter = (glyph.quarter + 1) % 4
+    onRunningChanged: if (!running) glyph.quarter = 0
+  }
 
   implicitWidth: size
   implicitHeight: size
@@ -38,6 +51,7 @@ Item {
     name: glyph.pixel
     size: glyph.size
     color: glyph.color
+    rotation: glyph.quarter * 90
   }
 
   Text {

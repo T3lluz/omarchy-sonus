@@ -3,21 +3,23 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// Panel kit: a section title in Omarchy's panel style (bold small caps,
-// dimmed) with an icon in front and, on the right, a reading or a switch for
-// the whole section.
+// Panel kit: a section title, dimmed, with an icon in front and, on the
+// right, a reading or a switch for the whole section. Dim is the foreground
+// mixed toward the background, so it stays dim on a light theme too.
 Item {
   id: header
 
   property string icon: ""
   property string title: ""
   property string detail: ""
-  property color detailColor: Qt.darker(foreground, 1.15)
+  property color detailColor: foreground
   property bool showSwitch: false
   property bool checked: false
   property color foreground: Commons.Color.foreground
   property color accent: Commons.Color.accent
+  property color background: Commons.Color.background
   property string fontFamily: Style.font.family
+  readonly property color dim: Qt.tint(foreground, Qt.rgba(background.r, background.g, background.b, 0.4))
 
   signal toggled()
 
@@ -32,37 +34,38 @@ Item {
     width: visible ? Style.space(20) : 0
     icon: header.icon
     size: Style.font.body
-    color: Qt.darker(header.foreground, 1.4)
+    color: header.dim
     fontFamily: header.fontFamily
   }
 
-  PanelSectionHeader {
+  MonoText {
     id: titleText
     anchors.left: iconBox.right
     anchors.leftMargin: iconBox.visible ? Style.space(4) : 0
     anchors.right: toggle.visible ? toggle.left : detailText.left
     anchors.rightMargin: Style.space(8)
     anchors.verticalCenter: parent.verticalCenter
+    step: "small"
+    textFormat: Text.PlainText
     elide: Text.ElideRight
     text: header.title
-    foreground: header.foreground
+    color: header.dim
     fontFamily: header.fontFamily
   }
 
-  Text {
+  MonoText {
     id: detailText
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
     visible: !header.showSwitch && header.detail !== ""
     width: visible ? Math.min(implicitWidth, header.width * 0.6) : 0
+    step: "small"
     textFormat: Text.PlainText
     text: header.detail
     horizontalAlignment: Text.AlignRight
     elide: Text.ElideRight
     color: header.detailColor
-    font.family: header.fontFamily
-    font.pixelSize: Style.font.caption
-    font.bold: true
+    fontFamily: header.fontFamily
   }
 
   ToggleSwitch {

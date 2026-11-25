@@ -36,6 +36,8 @@ Room {
   expanded: listOpen
   keyed: host.cursorActive && host.cursorKey === cursor
   onKeyedChanged: if (keyed) host.ensureVisible(tile)
+  // Only a list with another device in it is worth opening.
+  clickable: others > 0 || listOpen
   onClicked: tile.host.toggleDevices(tile.section)
   // Switching to another device plays its icon, as the panel opening does.
   readonly property string deviceName: device ? device.name : ""
@@ -46,7 +48,7 @@ Room {
   }
 
   WheelHandler {
-    enabled: tile.channelPresent
+    enabled: tile.channelPresent && !tile.host.mixerScrolls
     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
     onWheel: function(event) { tile.host.wheelVolume(tile.key, event.angleDelta.y) }
   }
@@ -59,6 +61,7 @@ Room {
     title: tile.device ? tile.device.label : (tile.section === "sink" ? "No output" : "No input")
     status: Audio.deviceState(tile.role, fader.muted, tile.others, tile.section)
     value: tile.channelPresent ? fader.shown : null
+    target: tile.channelPresent ? Model.percentOf(fader.level) : null
     mark: Model.markFor(fader.muted, tile.mic, false)
     figureDimmed: fader.muted
     dimmed: !tile.channelPresent

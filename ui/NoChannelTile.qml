@@ -79,7 +79,9 @@ Room {
         }
       }
 
-      Text {
+      MonoText {
+        step: "small"
+        fontFamily: tile.host.fontFamily
         visible: tile.apps.length === 0
         width: flow.width
         height: head.implicitHeight
@@ -88,9 +90,6 @@ Room {
         textFormat: Text.PlainText
         text: "Drop here to skip the channels"
         color: tile.dropHot ? tile.host.fg : tile.host.dim
-        font.family: tile.host.fontFamily
-        font.pixelSize: tile.host.textSize
-        renderType: Text.NativeRendering
       }
     }
   }

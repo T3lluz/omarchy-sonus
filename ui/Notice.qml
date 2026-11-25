@@ -5,7 +5,8 @@ import qs.Ui
 
 // Panel kit: a banner over the sections. An icon, its text in full, an
 // optional button and an optional close. `tone` is "accent" or "urgent";
-// while `busy` the icon turns and the buttons step aside.
+// while `busy` the buttons step aside. The icon never turns smoothly, which
+// smears pixel art: a plugin's Glyph steps its busy icon in quarter turns.
 BorderSurface {
   id: notice
 
@@ -41,19 +42,9 @@ BorderSurface {
     size: Style.font.title
     color: notice.toneColor
     fontFamily: notice.fontFamily
-
-    // Turns while something is in flight, so the banner reads as working.
-    RotationAnimation on rotation {
-      running: notice.busy && notice.visible
-      from: 0
-      to: 360
-      duration: 1200
-      loops: Animation.Infinite
-      onStopped: iconBox.rotation = 0
-    }
   }
 
-  Text {
+  MonoText {
     id: label
     anchors.left: iconBox.right
     anchors.leftMargin: Style.space(10)
@@ -66,8 +57,8 @@ BorderSurface {
     wrapMode: Text.Wrap
     text: notice.text
     color: notice.foreground
-    font.family: notice.fontFamily
-    font.pixelSize: Style.font.bodySmall
+    step: "small"
+    fontFamily: notice.fontFamily
   }
 
   Row {

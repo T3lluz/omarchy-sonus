@@ -68,6 +68,7 @@ Column {
   PanelSeparator { foreground: view.host.fg }
 
   SectionHeader {
+    icon: Glyphs.cog
     title: "GENERAL"
     foreground: view.host.fg
     fontFamily: view.host.fontFamily
@@ -87,16 +88,51 @@ Column {
     visible: !!view.service && view.service.legacy
     tone: "urgent"
     icon: Glyphs.alert
-    text: "The Sonus desktop app is running, so routing is paused here."
+    text: view.host.legacyLine
     actionLabel: "Switch"
     foreground: view.host.fg
     fontFamily: view.host.fontFamily
     onActioned: view.service.takeOver()
   }
 
+  // With reduced motion the spectrum stays off whatever the switch says,
+  // so the switch shows it off and cannot be turned.
+  SwitchRow {
+    icon: Glyphs.music
+    label: "Visualizer"
+    hint: Style.reduceMotion ? "Off while reduced motion is on" : "A spectrum of what's playing, behind the title. Off with reduced motion."
+    checked: !Style.reduceMotion && (view.service ? view.service.visualizer : true)
+    interactive: !Style.reduceMotion
+    foreground: view.host.fg
+    fontFamily: view.host.fontFamily
+    onToggled: view.service.setVisualizer(!view.service.visualizer)
+  }
+
+  // cava comes from Arch's repos. Sonus asks to install it on its own only
+  // right after an update that said so; otherwise this button asks. A closed
+  // password prompt or a failed pacman lands here.
+  Notice {
+    visible: !!view.service && view.service.visualizer && !Style.reduceMotion && view.service.engineUp && !view.service.cavaInstalled
+    tone: view.service && view.service.cavaMessage !== "" ? "urgent" : "accent"
+    icon: Glyphs.download
+    busy: !!view.service && view.service.cavaInstalling
+    text: {
+      var sv = view.service
+      if (!sv) return ""
+      if (sv.cavaInstalling) return "Installing cava…"
+      if (sv.cavaMessage !== "" && sv.cavaMessageFinal) return sv.cavaMessage + "."
+      return (sv.cavaMessage !== "" ? sv.cavaMessage + ". " : "") + "Install cava to see the visualizer."
+    }
+    actionLabel: "Install"
+    foreground: view.host.fg
+    fontFamily: view.host.fontFamily
+    onActioned: view.service.installCava()
+  }
+
   PanelSeparator { foreground: view.host.fg }
 
   SectionHeader {
+    icon: Glyphs.keyboard
     title: "SHORTCUT"
     foreground: view.host.fg
     fontFamily: view.host.fontFamily
@@ -121,7 +157,9 @@ Column {
       fontFamily: view.host.fontFamily
     }
 
-    Text {
+    MonoText {
+      step: "body"
+      fontFamily: view.host.fontFamily
       id: shortcutLine
       anchors.left: shortcutIcon.right
       anchors.leftMargin: Style.space(10)
@@ -132,8 +170,6 @@ Column {
       textFormat: Text.PlainText
       text: parent.bound ? "Opens this panel" : "Setting up the bind"
       color: parent.bound ? view.host.fg : view.host.dim
-      font.family: view.host.fontFamily
-      font.pixelSize: Style.font.body
     }
 
     CursorSurface {
@@ -145,15 +181,14 @@ Column {
       bordered: true
       foreground: view.host.fg
 
-      Text {
+      MonoText {
+        step: "small"
+        fontFamily: view.host.fontFamily
         id: chordText
         anchors.centerIn: parent
         textFormat: Text.PlainText
         text: "Ctrl+Alt+V"
         color: view.host.fg
-        font.family: view.host.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
       }
 
       HoverHandler { id: chordHover }

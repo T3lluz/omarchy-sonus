@@ -63,11 +63,29 @@ function toOutput(outputLabel) {
 }
 
 // The hero's caption keeps room for two lines in a narrow column, so a name that
-// would need a third gives way to a shorter sentence.
-var HERO_LIMIT = 34
+// would need a third gives way to a shorter sentence, and so does one with a
+// word wider than the column (On alsa_output.pci-0000_00_1f.3), which would
+// otherwise break in the middle. HERO_COLUMNS is what the column holds in
+// Monocraft at the panel's text size, with a little to spare.
+var HERO_COLUMNS = 17
 
-function fitted(line, shorter) {
-  return String(line).length <= HERO_LIMIT ? String(line) : String(shorter)
+// Whether `text`, wrapped at spaces, fits `lines` lines of `cols` characters
+// with no word cut.
+function fitsLines(text, cols, lines) {
+  var words = String(text).split(/\s+/).filter(function(w) { return w !== "" })
+  var count = 0
+  var used = 0
+  for (var i = 0; i < words.length; i++) {
+    var w = words[i].length
+    if (w > cols) return false
+    if (count === 0 || used + 1 + w > cols) { count++; used = w }
+    else used += 1 + w
+  }
+  return count <= lines
+}
+
+function fitted(line, shorter, cols) {
+  return fitsLines(line, cols || HERO_COLUMNS, 2) ? String(line) : String(shorter)
 }
 
 // What the hero's caption takes turns saying while nothing is happening,

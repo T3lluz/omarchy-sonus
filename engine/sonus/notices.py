@@ -72,15 +72,20 @@ def sentence(text: str) -> str:
     return text if text[-1] in ".!?" else text + "."
 
 
-def updated_text(version: str = "", stashed: bool = False) -> tuple[str, str]:
-    body = f"Sonus is on {version} now." if version else "Sonus is on the latest version."
+# The titles match the other plugins': "<Name> updated to <version>" and
+# "<Name> couldn't update".
+def updated_text(version: str = "", stashed: bool = False, cava_next: bool = False) -> tuple[str, str]:
+    parts = []
     if stashed:
-        body += " Your local edits are in git stash."
-    return "Sonus updated", body
+        parts.append("Your local edits are in git stash.")
+    if cava_next:
+        parts.append("Next it asks for your password to install cava, which draws the visualizer.")
+    title = f"Sonus updated to {version}" if version else "Sonus updated"
+    return title, " ".join(parts) or "Click to open the mixer."
 
 
 def failed_text(message: str = "") -> tuple[str, str]:
-    return "Sonus could not update", sentence(message) or "The update failed."
+    return "Sonus couldn't update", sentence(message) or "The update failed."
 
 
 # ----- the picture ---------------------------------------------------------
@@ -326,10 +331,10 @@ def send(kind: str, title: str, body: str, argv: list[str], replace: int = 0) ->
     return int(line[0]) if line and line[0].isdigit() else 0
 
 
-def updated(version: str = "", stashed: bool = False, key: str = "update") -> int:
+def updated(version: str = "", stashed: bool = False, key: str = "update", cava_next: bool = False) -> int:
     """An update went through. It takes the place of a failure still up from
     an earlier try, so the desktop does not say both."""
-    title, body = updated_text(version, stashed)
+    title, body = updated_text(version, stashed, cava_next)
     with _lock:
         ids = _ids()
         old = int(ids.pop(key, 0) or 0)

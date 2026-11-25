@@ -34,7 +34,7 @@ Item {
 
   readonly property var art: custom || Pixels.icons[name] || null
   readonly property var spec: custom ? null : Motion.specFor(name)
-  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  readonly property real dpr: Window.window && Window.window.devicePixelRatio > 0 ? Window.window.devicePixelRatio : 1
   // Device pixels across, in twelfths: odd counts take the halved grid. Its
   // strokes are this many device pixels thick either way.
   readonly property int twelfths: unit > 0 ? unit : Math.max(1, Math.round(size * dpr / 12))
@@ -58,6 +58,9 @@ Item {
 
   function start(fromNothing) {
     if (!spec || Style.reduceMotion) return
+    // A play already under way finishes; only a change of state (drawn in
+    // from nothing) cuts in, so hovering in and out does not stutter it.
+    if (playRun.running && !fromNothing) return
     playRun.stop()
     entering = fromNothing
     t = 0
@@ -67,7 +70,7 @@ Item {
 
   onPlayChanged: start(false)
   onNameChanged: if (ready) start(true)
-  Component.onCompleted: ready = true
+  Component.onCompleted: { ready = true; snap() }
 
   implicitWidth: twelfths * 12 / dpr
   implicitHeight: implicitWidth
@@ -87,17 +90,48 @@ Item {
     }
   }
 
-  Repeater {
-    model: icon.rects
+  // How far the cells move to start on a whole device pixel, checked after
+  // each frame the window draws (it draws only when something changed). On a
+  // 1.25 screen an icon at a fractional spot would smear its strokes.
+  property real snapX: 0
+  property real snapY: 0
 
-    Rectangle {
-      required property var modelData
-      x: modelData[0] * icon.cell
-      y: modelData[1] * icon.cell
-      width: modelData[2] * icon.cell
-      height: modelData[3] * icon.cell
-      color: icon.color
-      antialiasing: false
+  function snap() {
+    if (!visible) return
+    var p = icon.mapToItem(null, 0, 0)
+    var dx = Math.round(p.x * dpr) / dpr - p.x
+    var dy = Math.round(p.y * dpr) / dpr - p.y
+    if (Math.abs(dx - snapX) > 0.001) snapX = dx
+    if (Math.abs(dy - snapY) > 0.001) snapY = dy
+  }
+
+  Connections {
+    target: icon.Window.window
+    ignoreUnknownSignals: true
+    function onAfterAnimating() { icon.snap() }
+  }
+
+  Item {
+    x: icon.snapX
+    y: icon.snapY
+    width: icon.implicitWidth
+    height: icon.implicitHeight
+
+    // A count, not the list: a frame that keeps the number of rectangles
+    // moves the ones there instead of building them again.
+    Repeater {
+      model: icon.rects.length
+
+      Rectangle {
+        required property int index
+        readonly property var q: icon.rects[index] || [0, 0, 0, 0]
+        x: Math.round(q[0] * icon.cell * icon.dpr) / icon.dpr
+        y: Math.round(q[1] * icon.cell * icon.dpr) / icon.dpr
+        width: Math.round(q[2] * icon.cell * icon.dpr) / icon.dpr
+        height: Math.round(q[3] * icon.cell * icon.dpr) / icon.dpr
+        color: icon.color
+        antialiasing: false
+      }
     }
   }
 }

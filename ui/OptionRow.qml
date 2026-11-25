@@ -64,27 +64,26 @@ CursorSurface {
       width: parent.width - Style.space(22) - parent.spacing * 2 - trailing.width
       spacing: Style.space(1)
 
-      Text {
+      MonoText {
         width: parent.width
+        step: "body"
         textFormat: Text.PlainText
         text: row.title
         color: row.foreground
         elide: Text.ElideRight
-        font.family: row.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: row.current
+        fontFamily: row.fontFamily
       }
 
-      Text {
+      MonoText {
         width: parent.width
         visible: row.subtitle !== ""
+        step: "small"
         textFormat: Text.PlainText
         text: row.subtitle
         color: row.foreground
         opacity: 0.55
         elide: Text.ElideRight
-        font.family: row.fontFamily
-        font.pixelSize: Style.font.caption
+        fontFamily: row.fontFamily
       }
     }
 
@@ -93,16 +92,15 @@ CursorSurface {
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(6)
 
-      Text {
+      MonoText {
         anchors.verticalCenter: parent.verticalCenter
         visible: row.detail !== ""
+        step: "small"
         textFormat: Text.PlainText
         text: row.detail
         color: row.foreground
         opacity: 0.7
-        font.family: row.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
+        fontFamily: row.fontFamily
       }
 
       Glyph {

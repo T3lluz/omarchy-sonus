@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Pipewire
@@ -30,21 +31,22 @@ Panel {
     ? bar.shell.serviceFor(moduleName) : null
 
   readonly property color fg: bar ? bar.foreground : Commons.Color.foreground
-  readonly property color dim: Qt.darker(fg, 1.5)
-  // Text is in Monocraft (OFL, assets/fonts), a pixel face to go with the
-  // pixel icons, loaded from the plugin so it needs no system install. The
-  // bold file is loaded too so bold names are drawn, not smeared. Until it
-  // loads, or if it cannot, text falls back to the bar's font.
+  // The panel's quiet text: the foreground 40% of the way to the background.
+  // Qt.darker vanishes into a light theme's background; a tint reads on both.
+  readonly property color bg: Commons.Color.popups.background
+  readonly property color dim: Qt.tint(fg, Qt.rgba(bg.r, bg.g, bg.b, 0.4))
+  // Text is Monocraft Sonus (OFL, assets/fonts, patched by
+  // scripts/patch-font.py), a pixel face to go with the pixel icons, loaded
+  // from the plugin so it needs no system install, and drawn by the kit's
+  // MonoText so every font pixel lands on whole device pixels. Never bold:
+  // the bold face is never on the grid. Until it loads, or if it cannot,
+  // text falls back to the bar's font.
   FontLoader { id: monocraft; source: Qt.resolvedUrl("assets/fonts/Monocraft.ttf") }
-  FontLoader { source: Qt.resolvedUrl("assets/fonts/Monocraft-Bold.ttf") }
   readonly property string shellFont: bar ? bar.fontFamily : Style.font.family
   readonly property string fontFamily: monocraft.status === FontLoader.Ready ? monocraft.name : shellFont
-  // Monocraft lands on the screen's pixels only at whole multiples of its
-  // nine-pixel grid (Model.monoSize), so the panel's own text comes in two
-  // sizes, never bold (its bold face grows off the grid): running text, and
-  // titles at twice that. One character is two thirds of the size across.
-  readonly property int textSize: Model.monoSize(Style.font.body)
-  readonly property int titleSize: textSize * 2
+  // One character of MonoText at a step, in logical pixels, for sizing a
+  // column before any text is laid out in it.
+  function advance(step) { return Model.monoAdvance(step, dpr) }
 
   // The mixer is wider than Omarchy's 380 so the four channels fit side by
   // side, each about as wide as an official panel's half row plus a figure.
@@ -56,14 +58,9 @@ Panel {
   readonly property real mixerWidth: Math.max(Style.space(860), Math.ceil(channelNeed * 4 + roomGap * 3))
   readonly property real channelNeed: {
     var chevron = Math.max(1, Math.round(Style.font.caption * dpr / 12)) * 12 / dpr
-    return roomPad * 2 + textInset + Math.ceil(titleProbe.advanceWidth) + Style.space(1)
+    var longest = categories.reduce(function(a, c) { return c.title.length > a ? c.title.length : a }, 0)
+    return roomPad * 2 + textInset + Math.ceil(longest * advance("body")) + Style.space(1)
       + chevron + Style.space(5) + Style.space(8) + widestFigure.implicitWidth
-  }
-  TextMetrics {
-    id: titleProbe
-    text: root.categories.reduce(function(a, c) { return c.title.length > a.length ? c.title : a }, "")
-    font.family: root.fontFamily
-    font.pixelSize: root.textSize
   }
   // The widest a channel's figure gets: 100, with a mark beside it.
   BigFigure {
@@ -263,6 +260,9 @@ Panel {
 
   // ---- banners ----------------------------------------------------------------
 
+  // The desktop app's state, said the same way on the mixer and in Settings.
+  readonly property string legacyLine: "The Sonus desktop app is running, so routing is paused here until you switch."
+
   // The update banner text the user closed; a different one shows again.
   property string dismissedUpdate: ""
 
@@ -273,7 +273,7 @@ Panel {
     var list = []
     if (!s) return list
     if (s.legacy) list.push({ key: "legacy", tone: "urgent", icon: Glyphs.alert,
-      text: "The Sonus desktop app is still running. Routing is paused here until you switch.",
+      text: legacyLine,
       action: "takeOver", actionLabel: "Switch" })
     if (s.noticeText !== "") list.push({ key: "engine", tone: s.noticeError ? "urgent" : "accent",
       icon: s.noticeError ? Glyphs.alert : s.noticeForm !== "" ? Glyphs.deviceGlyph(s.noticeForm) : Glyphs.info,
@@ -505,11 +505,35 @@ Panel {
       flick.contentY = Math.min(Math.max(0, flick.contentHeight - flick.height), p.y + item.height + margin - flick.height)
   }
 
+  // The open panel tells the service how big a spectrum its title room fits.
+  Binding {
+    target: root.service
+    property: "spectrumBars"
+    // Only the mixer shows the spectrum; on Settings and the EQ cava rests.
+    value: root.view === "mixer" ? heroSpectrum.columns : 0
+    when: root.opened && !!root.service
+    restoreMode: Binding.RestoreNone
+  }
+
+  Binding {
+    target: root.service
+    property: "spectrumRows"
+    value: heroSpectrum.rows
+    when: root.opened && !!root.service
+    restoreMode: Binding.RestoreNone
+  }
+
   // ---- volume, routing ------------------------------------------------------------
 
+  // While the mixer is taller than the panel the wheel scrolls it; only a
+  // fader still turns its level (Fader.qml), so a room never steals the scroll.
+  readonly property bool mixerScrolls: flick.interactive
   property real wheelAcc: 0
+  property string wheelKey: ""
 
   function wheelVolume(key, delta) {
+    // Half a notch left over from another room must not turn this one.
+    if (key !== wheelKey) { wheelKey = key; wheelAcc = 0 }
     wheelAcc += delta
     var steps = wheelAcc > 0 ? Math.floor(wheelAcc / 120) : Math.ceil(wheelAcc / 120)
     if (steps === 0) return
@@ -644,10 +668,11 @@ Panel {
   // icon size, with pixel art's two units clear around the 24): twelve
   // device pixels on a 1.25 scale, twenty-four on a 2. The hover card's
   // figures stand as tall as the bar's digits.
-  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  readonly property real dpr: Window.window && Window.window.devicePixelRatio > 0 ? Window.window.devicePixelRatio : 1
   readonly property int iconUnit: Math.max(1, Math.floor(Style.bar.iconSize * 24 / 20 * dpr / 12))
   readonly property int pixelUnit: Math.max(1, Math.round(button.fontSize * 0.72 * dpr / 5))
   readonly property color barFg: bar ? bar.barForeground : Commons.Color.foreground
+  readonly property color barBg: bar && bar.background !== undefined ? bar.background : Commons.Color.bar.background
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -669,7 +694,7 @@ Panel {
       anchors.centerIn: parent
       unit: root.iconUnit
       color: root.barFg
-      dimColor: Qt.darker(root.barFg, 1.55)
+      dimColor: Qt.tint(root.barFg, Qt.rgba(root.barBg.r, root.barBg.g, root.barBg.b, 0.4))
       muted: !!(root.service && root.service.masterMuted)
     }
 
@@ -747,7 +772,6 @@ Panel {
     palette: root.palette
     unit: root.pixelUnit
     fontFamily: root.fontFamily
-    textSize: root.textSize
   }
 
   // ---- panel --------------------------------------------------------------------
@@ -816,7 +840,8 @@ Panel {
         }
         var key = t.toLowerCase()
         var target = root.cursorTarget()
-        if (key === "s" || key === ",") root.setView(root.view === "settings" ? "mixer" : "settings")
+        // `,` opens Settings in every plugin; `s` and `c` (config) still do.
+        if (key === "," || key === "s" || key === "c") root.setView(root.view === "settings" ? "mixer" : "settings")
         else if (root.view !== "mixer") return
         else if (key === "m" && root.service && root.muteKey()) root.service.setMute(root.muteKey(), !root.service.mutedOf(root.muteKey()))
         else if (key === "e" && root.cursorKey.indexOf("ch:") === 0) root.openEq(target)
@@ -845,8 +870,33 @@ Panel {
           contentWidth: width
           contentHeight: mixerColumn.implicitHeight
           clip: true
-          interactive: contentHeight > height && root.dragKey === ""
+          readonly property bool overflowing: contentHeight > height + 0.5
+          interactive: overflowing && root.dragKey === ""
           boundsBehavior: Flickable.StopAtBounds
+          flickableDirection: Flickable.VerticalFlick
+          // A room closing can leave the view past the end; bring it back.
+          onContentHeightChanged: {
+            var end = Math.max(0, contentHeight - height)
+            if (contentY > end) contentY = end
+          }
+          // Always showing when there is more, since the clip can land between
+          // two rooms and make the panel look finished. A thin bar over the
+          // rooms' right padding, so it never narrows them.
+          ScrollBar.vertical: ScrollBar {
+            id: mixerScroll
+            policy: flick.overflowing ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            padding: 0
+            rightPadding: Style.space(2)
+            topPadding: Style.space(2)
+            bottomPadding: Style.space(2)
+            background: Item {}
+            contentItem: Rectangle {
+              implicitWidth: Math.max(2, Style.space(3))
+              radius: Style.cornerRadius > 0 ? width / 2 : 0
+              color: root.fg
+              opacity: mixerScroll.pressed ? 0.6 : mixerScroll.hovered ? 0.45 : 0.3
+            }
+          }
           opacity: root.pageFade
           transform: Translate { x: root.view === "mixer" ? root.pageShift : 0 }
 
@@ -882,6 +932,14 @@ Panel {
                   delay: 0
                   naturalHeight: topHero.implicitHeight
 
+                  backdrop: Spectrum {
+                    id: heroSpectrum
+                    anchors.fill: parent
+                    visible: !!root.service && root.service.visualizer && root.service.cavaInstalled && !Style.reduceMotion
+                    host: root
+                    levels: root.service ? root.service.spectrum : []
+                  }
+
                   HeroBlock {
                     id: topHero
                     width: parent.width
@@ -897,7 +955,7 @@ Panel {
                     PixelButton {
                       icon: "settings-cog"
                       angle: Math.round(root.gearTurn * -2) * 45
-                      tooltipText: "Settings (s)"
+                      tooltipText: "Settings (,)"
                       foreground: root.fg
                       fontFamily: root.fontFamily
                       onClicked: root.setView("settings")
@@ -1086,27 +1144,25 @@ Panel {
             }
 
             // A long name wraps rather than running past the panel.
-            Text {
+            MonoText {
+              step: "body"
+              fontFamily: root.fontFamily
               anchors.verticalCenter: parent.verticalCenter
               width: Math.min(implicitWidth, Style.space(240))
               wrapMode: Text.Wrap
               textFormat: Text.PlainText
-              text: Model.wrapName(root.dragName, Model.monoColumns(Style.space(240), root.textSize))
+              text: Model.wrapName(root.dragName, Model.monoColumns(Style.space(240), advance))
               color: root.fg
-              font.family: root.fontFamily
-              font.pixelSize: root.textSize
-              renderType: Text.NativeRendering
             }
 
-            Text {
+            MonoText {
+              step: "small"
+              fontFamily: root.fontFamily
               visible: root.dropTarget !== ""
               anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
               text: "to " + root.channelTitle(root.dropTarget === "master" ? "" : root.dropTarget)
               color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: root.textSize
-              renderType: Text.NativeRendering
             }
           }
         }

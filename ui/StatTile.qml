@@ -52,30 +52,27 @@ BorderSurface {
         fontFamily: tile.fontFamily
       }
 
-      Text {
+      MonoText {
         anchors.verticalCenter: parent.verticalCenter
+        step: "small"
         textFormat: Text.PlainText
         text: tile.caption
         color: tile.foreground
         opacity: 0.6
         elide: Text.ElideRight
-        font.family: tile.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
-        font.letterSpacing: 0.8
+        fontFamily: tile.fontFamily
       }
     }
 
-    Text {
+    MonoText {
       width: parent.width
+      step: "title"
       textFormat: Text.PlainText
       text: tile.value
       color: tile.valueColor
       elide: Text.ElideRight
-      font.family: tile.fontFamily
-      font.pixelSize: Style.font.heading
-      font.bold: true
-      Behavior on color { ColorAnimation { duration: 300 } }
+      fontFamily: tile.fontFamily
+      Behavior on color { ColorAnimation { duration: Style.duration(300) } }
     }
 
     // Always takes its line, so tiles in a row keep one height.
@@ -83,17 +80,17 @@ BorderSurface {
       width: parent.width
       height: noteText.implicitHeight
 
-      Text {
+      MonoText {
         id: noteText
         visible: !tile.showLevel
         width: parent.width
+        step: "small"
         textFormat: Text.PlainText
         text: tile.note || " "
         color: tile.foreground
         opacity: 0.55
         elide: Text.ElideRight
-        font.family: tile.fontFamily
-        font.pixelSize: Style.font.caption
+        fontFamily: tile.fontFamily
       }
 
       LevelBar {

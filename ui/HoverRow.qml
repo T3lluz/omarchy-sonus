@@ -13,11 +13,12 @@ Rectangle {
   property var entry: ({})
   property color tone: "white"
   property color foreground: "white"
+  // Quiet text: the card's own tint of the foreground toward its background.
+  property color dimColor: Qt.darker(foreground, 1.5)
   property int unit: 2
   property string fontFamily: Style.font.family
-  property int textSize: Style.font.caption
   // As wide as the row would be with its name on one line.
-  readonly property real needWidth: icon.x + icon.width + Style.space(6) + Math.ceil(nameMetrics.advanceWidth)
+  readonly property real needWidth: icon.x + icon.width + Style.space(6) + Math.ceil(String(hoverRow.entry.name || "").length * name.advance)
     + Style.space(6) + markSlot.width + Style.space(5) + cells.width + Style.space(8) + level.width + Style.space(6)
   // Goes up as the card shows, to play the row's icons, `playDelay` ms in.
   property int play: 0
@@ -34,12 +35,14 @@ Rectangle {
     anchors.verticalCenter: parent.verticalCenter
     name: hoverRow.entry.icon
     size: Style.font.body
-    color: hoverRow.entry.muted ? Qt.darker(hoverRow.foreground, 1.5) : hoverRow.tone
+    color: hoverRow.entry.muted ? hoverRow.dimColor : hoverRow.tone
     play: hoverRow.play
     playDelay: hoverRow.playDelay
   }
 
-  Text {
+  MonoText {
+    step: "body"
+    fontFamily: hoverRow.fontFamily
     id: name
     anchors.left: icon.right
     anchors.leftMargin: Style.space(6)
@@ -48,17 +51,8 @@ Rectangle {
     anchors.verticalCenter: parent.verticalCenter
     textFormat: Text.PlainText
     wrapMode: Text.Wrap
-    text: Model.wrapName(hoverRow.entry.name, Model.monoColumns(width, hoverRow.textSize))
+    text: Model.wrapName(hoverRow.entry.name, Model.monoColumns(width, advance))
     color: hoverRow.foreground
-    font.family: hoverRow.fontFamily
-    font.pixelSize: hoverRow.textSize
-    renderType: Text.NativeRendering
-  }
-
-  TextMetrics {
-    id: nameMetrics
-    font: name.font
-    text: hoverRow.entry.name || ""
   }
 
   // The mark (muted, an equalizer at work) in a column of its own
@@ -77,9 +71,9 @@ Rectangle {
       visible: hoverRow.entry.mark !== ""
       name: hoverRow.entry.mark || "sliders-horizontal"
       size: Style.font.body
-      color: hoverRow.entry.muted ? Qt.darker(hoverRow.foreground, 1.5) : hoverRow.tone
+      color: hoverRow.entry.muted ? hoverRow.dimColor : hoverRow.tone
       play: hoverRow.play
-      playDelay: hoverRow.playDelay + 200
+      playDelay: hoverRow.playDelay
     }
   }
 
@@ -150,7 +144,7 @@ Rectangle {
       anchors.right: parent.right
       text: hoverRow.known ? Model.percentOf(hoverRow.entry.volume) + "%" : "--"
       unit: hoverRow.unit
-      color: hoverRow.known && !hoverRow.entry.muted ? hoverRow.foreground : Qt.darker(hoverRow.foreground, 1.5)
+      color: hoverRow.known && !hoverRow.entry.muted ? hoverRow.foreground : hoverRow.dimColor
     }
   }
 }

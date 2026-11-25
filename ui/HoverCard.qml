@@ -23,15 +23,16 @@ PopupWindow {
   property var palette: ({})
   property int unit: 2
   property string fontFamily: Style.font.family
-  property int textSize: Style.font.caption
   // The card takes the width its longest name needs on one line, between
-  // the shell tooltip's 280 and 460, so a device name does not stack a word
-  // a line.
+  // the shell tooltip's 280 and 380, so a device name does not stack a word
+  // a line; a longer one wraps at its words.
   readonly property var longestRow: rows.reduce(function(a, r) {
     return String(r && r.name || "").length > String(a && a.name || "").length ? r : a
   }, rows.length ? rows[0] : ({}))
 
   readonly property color foreground: Commons.Color.tooltip.text
+  readonly property color background: Commons.Color.tooltip.background
+  readonly property color dim: Qt.tint(foreground, Qt.rgba(background.r, background.g, background.b, 0.4))
   readonly property real gap: 6
   readonly property var barWindow: target ? target.QsWindow.window : null
 
@@ -82,7 +83,7 @@ PopupWindow {
   BorderSurface {
     id: frame
     opacity: card.revealed ? 1 : 0
-    implicitWidth: Math.round(Math.max(Style.space(280), Math.min(Style.space(460), probe.needWidth + Style.space(8) * 2)))
+    implicitWidth: Math.round(Math.max(Style.space(280), Math.min(Style.space(380), probe.needWidth + Style.space(8) * 2)))
     implicitHeight: list.implicitHeight + Style.space(8) * 2
     color: Commons.Color.tooltip.background
     borderSpec: Border.surfaceSpec("tooltip", "border", Commons.Color.tooltip.border, 1)
@@ -103,17 +104,19 @@ PopupWindow {
           required property int index
           width: list.width
           play: card.plays
-          playDelay: 60 + index * 70
+          playDelay: index * 70
           entry: modelData
           tone: card.toneOf(modelData.tone)
           foreground: card.foreground
+          dimColor: card.dim
           unit: card.unit
           fontFamily: card.fontFamily
-          textSize: card.textSize
         }
       }
 
-      Text {
+      MonoText {
+        step: "small"
+        fontFamily: card.fontFamily
         visible: card.note !== ""
         width: list.width
         topPadding: Style.space(3)
@@ -121,10 +124,20 @@ PopupWindow {
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
         text: card.note
-        color: Qt.darker(card.foreground, 1.4)
-        font.family: card.fontFamily
-        font.pixelSize: card.textSize
-        renderType: Text.NativeRendering
+        color: card.dim
+      }
+
+      // What the bar item does, since the card stands where its tooltip would.
+      MonoText {
+        step: "small"
+        fontFamily: card.fontFamily
+        width: list.width
+        topPadding: Style.space(3)
+        leftPadding: Style.space(6)
+        textFormat: Text.PlainText
+        wrapMode: Text.Wrap
+        text: "Click opens · right-click settings · middle-click mutes · scroll sets volume"
+        color: card.dim
       }
     }
   }
@@ -137,6 +150,5 @@ PopupWindow {
     entry: ({ name: card.longestRow.name || "", icon: card.longestRow.icon || "", mark: "sliders-horizontal", volume: 1 })
     unit: card.unit
     fontFamily: card.fontFamily
-    textSize: card.textSize
   }
 }

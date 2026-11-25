@@ -65,6 +65,7 @@ Rectangle {
   }
 
   WheelHandler {
+    enabled: !card.host.mixerScrolls
     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
     onWheel: function(event) { card.host.wheelVolume(card.key, event.angleDelta.y) }
   }
@@ -119,7 +120,9 @@ Rectangle {
         }
       }
 
-      Text {
+      MonoText {
+        step: "body"
+        fontFamily: card.host.fontFamily
         id: name
         anchors.left: icon.right
         anchors.leftMargin: card.host.snap(Style.space(6))
@@ -132,11 +135,8 @@ Rectangle {
         // in full in the card's tooltip.
         maximumLineCount: 3
         elide: Text.ElideRight
-        text: Model.wrapName(card.app.name || "Unknown", Model.monoColumns(width, card.host.textSize))
+        text: Model.wrapName(card.app.name || "Unknown", Model.monoColumns(width, advance))
         color: card.muted ? card.host.dim : card.host.fg
-        font.family: card.host.fontFamily
-        font.pixelSize: card.host.textSize
-        renderType: Text.NativeRendering
       }
 
       // Its equaliser: the bars play while sound comes out, on the panel's

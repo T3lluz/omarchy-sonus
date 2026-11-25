@@ -10,7 +10,7 @@ Grid {
 
   property color color: Commons.Color.foreground
 
-  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  readonly property real dpr: Window.window && Window.window.devicePixelRatio > 0 ? Window.window.devicePixelRatio : 1
   readonly property real dot: Math.max(2, Math.round(Style.space(2) * dpr)) / dpr
 
   columns: 2

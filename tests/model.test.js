@@ -11,8 +11,8 @@ function load(file, names) {
 const Model = load("Model.js", ["hasLevel", "percentOf", "CHANNEL_PIXELS", "channelPixel", "DEVICE_PIXELS", "devicePixel",
   "levelPixel", "markFor", "UI_PIXELS", "GLYPH_PIXELS", "PIXEL_GLYPHS", "pixelFor",
   "KEY_TONES", "toneName", "parsePalette", "contrast", "TONE_HUES", "hexRgb", "roomToneHex", "bigDigits",
-  "PIXEL_FONT", "pixelText", "drawable", "meterCells", "METER", "faderValue", "MONO_EM", "monoSize", "monoColumns", "wrapName",
-  "scramble", "hoverRows", "LOGO_KNOBS", "LOGO_DOWN", "logoGrid", "gridRects", "sonusLogo", "logoKnobs", "revealLine"])
+  "PIXEL_FONT", "pixelText", "drawable", "meterCells", "METER", "faderValue", "monoCell", "monoAdvance", "monoColumns", "wrapName",
+  "scramble", "hoverRows", "LOGO_KNOBS", "LOGO_DOWN", "logoGrid", "gridRects", "sonusLogo", "logoKnobs", "revealLine", "SPECTRUM", "spectrumFrame"])
 const { icons } = load("Pixels.js", ["icons"])
 const Glyphs = load("Glyphs.js", ["deviceGlyph", "channel", "levelIcon"])
 
@@ -68,6 +68,26 @@ for (const m of glyphSource.matchAll(/^var (\w+) = g\((0x[0-9A-F]+)\)/gm))
 for (const form of ["laptop", "headphones", "earbuds", "hdmi", "mic", "camera", ""])
   assert.ok(Model.pixelFor(Glyphs.deviceGlyph(form)), "notice icon for " + form)
 assert.strictEqual(Model.pixelFor("x"), "")
+
+// No Nerd Font glyph is typed straight into the QML or the helpers, past
+// the map (as ROG Deck checks): every one has a pixel icon. The one the kit
+// types itself, the "Check now" button inside UpdateSection, is exempt.
+{
+  const files = ["Panel.qml", "Service.qml"].map(f => path.join(__dirname, "..", f))
+    .concat(fs.readdirSync(qmlDir).filter(f => /\.(qml|js)$/.test(f) && f !== "UpdateSection.qml" && f !== "Pixels.js")
+      .map(f => path.join(qmlDir, f)))
+  const exempt = new Set([0xF0453])
+  for (const file of files) {
+    const text = fs.readFileSync(file, "utf8")
+    const found = []
+    for (const ch of text) found.push(ch.codePointAt(0))
+    for (const m of text.matchAll(/\\u\{?([0-9A-Fa-f]{4,6})\}?|0x(F[0-9A-Fa-f]{4})\b/g)) found.push(parseInt(m[1] || m[2], 16))
+    for (const cp of found) {
+      if (!((cp >= 0xE000 && cp <= 0xF8FF) || (cp >= 0xF0000 && cp <= 0xFFFFD)) || exempt.has(cp)) continue
+      assert.ok(Model.pixelFor(String.fromCodePoint(cp)), "U+" + cp.toString(16).toUpperCase() + " in " + path.basename(file) + " has a pixel icon")
+    }
+  }
+}
 
 // A channel's icon never looks like a device, and each channel has its own.
 const channelIcons = ["game", "chat", "media", "aux", ""].map(Model.channelPixel)
@@ -147,13 +167,26 @@ assert.strictEqual(Model.faderValue(-10, 100, 0.05), 0)
 assert.strictEqual(Model.faderValue(140, 100, 0.05), 1)
 assert.strictEqual(Model.faderValue(10, 0, 0.05), 0)
 
-// Type on Monocraft's grid: running text at a whole multiple of nine.
-assert.strictEqual(Model.monoSize(11), 9)
-assert.strictEqual(Model.monoSize(12), 9)
-assert.strictEqual(Model.monoSize(16), 18)
-assert.strictEqual(Model.monoSize(4), 9)
-assert.strictEqual(Model.monoColumns(60, 9), 10)
-assert.strictEqual(Model.monoColumns(59.9, 9), 9)
+// A one- or two-letter last word never sits alone.
+assert.strictEqual(Model.wrapName("Counter-Strike 2", 14), "Counter-\nStrike 2")
+assert.strictEqual(Model.wrapName("Living room TV", 12), "Living\nroom TV")
+assert.strictEqual(Model.wrapName("Zen", 14), "Zen")
+
+// The kit's MonoText steps: font pixels a cell, at each window scale
+// (the table in ui/MonoText.qml).
+for (const [d, small, body, title] of [[1, 1, 2, 3], [1.25, 1, 2, 3], [1.5, 2, 3, 4], [2, 2, 3, 4]]) {
+  assert.deepStrictEqual([Model.monoCell("small", d), Model.monoCell("body", d), Model.monoCell("title", d)], [small, body, title], "dpr " + d)
+}
+assert.strictEqual(Model.monoAdvance("body", 2), 9)
+assert.strictEqual(Model.monoAdvance("small", 1.25), 4.8)
+assert.strictEqual(Model.monoColumns(60, 6), 10)
+assert.strictEqual(Model.monoColumns(59.9, 6), 9)
+{
+  // And MonoText itself still says so.
+  const mono = fs.readFileSync(path.join(qmlDir, "MonoText.qml"), "utf8")
+  assert.ok(mono.includes("var small = Math.max(1, Math.round(d))") && mono.includes("var body = Math.max(small + 1, Math.round(1.5 * d))")
+    && mono.includes('return Math.max(body + 1, Math.round(2 * d))'), "Model.monoCell mirrors MonoText.cellFor")
+}
 
 // Names break at spaces, and long raw names at their joints, never inside a word.
 assert.strictEqual(Model.wrapName("Laptop speakers", 20), "Laptop speakers")
@@ -167,6 +200,12 @@ assert.strictEqual(Model.wrapName("steam_app_1245620_EldenRingNightreign", 14), 
 // A run with no joint longer than a line is the only thing cut.
 assert.strictEqual(Model.wrapName("abcdefghij", 4), "abcd\nefgh\nij")
 assert.strictEqual(Model.wrapName("Spotify", 3), "Spo\ntif\ny")
+
+// The spectrum's ceiling halves in about a second and a half at cava's frame rate.
+{
+  const halve = Math.log(0.5) / Math.log(Model.SPECTRUM.DECAY) / Model.SPECTRUM.FPS
+  assert.ok(halve > 1.2 && halve < 1.7, "ceiling halves in " + halve.toFixed(2) + " s")
+}
 
 // The decode keeps the line's shape and ends on the line.
 const line = "Output · 2 more"
@@ -205,5 +244,29 @@ assert.strictEqual(Model.revealLine("a b", 1, true), "a <font color=\"#00000000\
 assert.strictEqual(Model.revealLine("ab", 2, true), "ab_")
 assert.strictEqual(Model.revealLine("ab", 2, false), "ab<font color=\"#00000000\">_</font>")
 assert.ok(Model.revealLine("Tom & Jerry", 11, true).includes("Tom &amp; Jerry"))
+
+// The spectrum: quiet music still fills the room, silence lights nothing,
+// and a ceiling falls back a little each frame rather than all at once.
+{
+  const half = Math.round(Math.pow(0.5, Model.SPECTRUM.CURVE) * 10)
+  assert.ok(half > 5 && half < 10)
+  const loud = Model.spectrumFrame("1000;500;0;", 3, 10, 0)
+  assert.deepStrictEqual(loud.levels, [10, half, 0])
+  const quiet = Model.spectrumFrame("200;100;0;", 3, 10, 0)
+  assert.deepStrictEqual(quiet.levels, [10, half, 0])
+  const after = Model.spectrumFrame("200;100;0;", 3, 10, 1000)
+  assert.strictEqual(after.ceiling, 1000 * Model.SPECTRUM.DECAY)
+  assert.ok(after.levels[0] < 10)
+  let ceiling = 1000
+  for (let i = 0; i < 600; i++) ceiling = Model.spectrumFrame("200;100;0;", 3, 10, ceiling).ceiling
+  assert.deepStrictEqual(Model.spectrumFrame("200;100;0;", 3, 10, ceiling).levels, [10, half, 0])
+  assert.deepStrictEqual(Model.spectrumFrame("0;0;0;", 3, 10, 0).levels, [0, 0, 0])
+  // A hiss of 1 in RANGE stays dark; music at the floor fills the room.
+  assert.deepStrictEqual(Model.spectrumFrame("1;0;0;", 3, 10, 0).levels, [0, 0, 0])
+  assert.deepStrictEqual(Model.spectrumFrame(Model.SPECTRUM.FLOOR + ";0;0;", 3, 10, 0).levels, [10, 0, 0])
+  assert.deepStrictEqual(Model.spectrumFrame("0;0;0;", 3, 10, 50).levels, [0, 0, 0])
+  assert.deepStrictEqual(Model.spectrumFrame("", 2, 10, 0).levels, [0, 0])
+  assert.deepStrictEqual(Model.spectrumFrame("500000;-3;x;", 3, 10, 0).levels, [10, 0, 0])
+}
 
 console.log("model ok")

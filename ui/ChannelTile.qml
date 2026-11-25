@@ -49,6 +49,7 @@ Room {
   dropHot: dragging && host.dropTarget === dropKey
   naturalHeight: top.implicitHeight + spacing + bucketNeed
   onKeyedChanged: if (keyed) host.ensureVisible(tile)
+  clickable: channelPresent
   onClicked: if (channelPresent) host.toggleChannel(key)
   // An app starting to play here plays the channel's icon.
   property int appsSeen: 0
@@ -69,7 +70,7 @@ Room {
     }
 
     WheelHandler {
-      enabled: tile.channelPresent
+      enabled: tile.channelPresent && !tile.host.mixerScrolls
       acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
       onWheel: function(event) { tile.host.wheelVolume(tile.key, event.angleDelta.y) }
     }
@@ -81,6 +82,7 @@ Room {
       title: tile.title
       status: Audio.channelState(tile.channelPresent, !!tile.service && tile.service.manageGraph, tile.muted, tile.apps.length)
       value: tile.channelPresent ? fader.shown : null
+    target: tile.channelPresent ? Model.percentOf(fader.level) : null
       mark: Model.markFor(tile.muted, false, tile.eqShaping)
       figureDimmed: tile.muted
       dimmed: !tile.channelPresent
@@ -189,7 +191,9 @@ Room {
       }
     }
 
-    Text {
+    MonoText {
+      step: "small"
+      fontFamily: tile.host.fontFamily
       anchors.centerIn: parent
       width: parent.width - Style.space(8)
       visible: tile.apps.length === 0
@@ -198,9 +202,6 @@ Room {
       textFormat: Text.PlainText
       text: Audio.bucketLine(tile.channelPresent, tile.dragging, tile.host.appCount)
       color: tile.host.dim
-      font.family: tile.host.fontFamily
-      font.pixelSize: tile.host.textSize
-      renderType: Text.NativeRendering
     }
   }
 }

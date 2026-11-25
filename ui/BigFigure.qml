@@ -13,6 +13,9 @@ Item {
   id: figure
 
   property var value: null
+  // The level it is counting up to. Its width is kept from the start, so the
+  // room does not widen as the count passes 9 and 99.
+  property var target: value
   property color tone: "white"
   property color foreground: "white"
   property string mark: ""
@@ -29,7 +32,7 @@ Item {
     var base = Math.round(fontSize)
     var charW = baseGrid.implicitWidth / 10
     for (var s = base; s > 7; s--) {
-      var w = cols * charW * s / base + Style.space(3) + Math.max(pct.implicitWidth, Math.round(s * 1.1))
+      var w = reserveCols * charW * s / base + Style.space(3) + Math.max(pct.implicitWidth, Math.round(s * 1.1))
       if (w <= maxWidth) return s
     }
     return 7
@@ -39,10 +42,16 @@ Item {
   readonly property bool known: Model.hasLevel(value)
   readonly property var rows: Model.bigDigits(known ? String(Math.round(value)) : "--")
   readonly property int cols: rows[0].length
+  readonly property int reserveCols: Math.max(cols,
+    Model.hasLevel(target) ? Model.bigDigits(String(Math.round(target)))[0].length : 0)
   readonly property real cellW: grid.implicitWidth / 10
   readonly property real cellH: Math.round(metrics.height * 0.9)
-  readonly property real digitsWidth: Math.round(cols * cellW)
-  readonly property color faceColor: known && !dimmed ? tone : Qt.darker(foreground, 1.5)
+  readonly property real digitsWidth: Math.round(reserveCols * cellW)
+  // Fewer digits than kept room for sit at the right, next to the %.
+  readonly property real digitsShift: Math.round((reserveCols - cols) * cellW)
+  // Quiet text, from the panel (a tint toward the background).
+  property color dimColor: Qt.darker(foreground, 1.5)
+  readonly property color faceColor: known && !dimmed ? tone : dimColor
   // Every block of every row, as [col, row, "full" | "top" | "bottom"].
   readonly property var blocks: {
     var out = []
@@ -91,7 +100,7 @@ Item {
     Rectangle {
       required property var modelData
       readonly property real from: modelData[1] * figure.cellH + (modelData[2] === "bottom" ? figure.cellH / 2 : 0)
-      x: Math.round(modelData[0] * figure.cellW)
+      x: figure.digitsShift + Math.round(modelData[0] * figure.cellW)
       y: Math.round(from)
       width: Math.round((modelData[0] + 1) * figure.cellW) - x
       height: Math.round(from + (modelData[2] === "full" ? figure.cellH : figure.cellH / 2)) - y
@@ -113,7 +122,7 @@ Item {
       anchors.horizontalCenter: parent.horizontalCenter
       name: figure.mark
       size: figure.markSize
-      color: figure.dimmed ? Qt.darker(figure.foreground, 1.5) : figure.tone
+      color: figure.dimmed ? figure.dimColor : figure.tone
       play: figure.markPlay
       playDelay: 220
     }
@@ -125,7 +134,7 @@ Item {
       anchors.bottom: parent.bottom
       text: "%"
       size: Style.font.caption * 0.75
-      color: Qt.darker(figure.foreground, 1.5)
+      color: figure.dimColor
     }
   }
 }

@@ -19,7 +19,7 @@ os.environ["XDG_CONFIG_HOME"] = _config_home
 os.environ["XDG_STATE_HOME"] = tempfile.mkdtemp(prefix="sonus-state-")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine"))
 
-from sonus import config, eq, graph, notices, pipewire, profiles, updater  # noqa: E402
+from sonus import cava, config, eq, graph, notices, pipewire, profiles, updater  # noqa: E402
 
 
 class ChannelEqTest(unittest.TestCase):
@@ -293,10 +293,13 @@ class UpdaterTest(unittest.TestCase):
         from sonus.engine import Engine
         engine = mock.MagicMock()
         with mock.patch.object(updater, "restart_shell", return_value=True) as restart, \
+                mock.patch.object(cava, "installed", return_value=True), \
                 mock.patch.object(notices, "updated") as notify, mock.patch.object(notices, "failed"):
             Engine._report_update(engine, {"ok": True, "version": "1.1.0"})
             restart.assert_called_once()
-            notify.assert_called_once_with("1.1.0", False)
+            notify.assert_called_once_with("1.1.0", False, cava_next=False)
+            # This engine is on its way out with the shell, so cava waits for the next.
+            self.assertTrue(engine._restarting)
             engine.update_check.assert_not_called()
             self.assertIsNone(updater.read_result())
 
@@ -368,13 +371,16 @@ class NoticesTest(unittest.TestCase):
     RED_THEME = {"foreground": "#cacccc", "background": "#101315", "urgent": "#e06c75"}
 
     def test_the_words(self):
-        self.assertEqual(notices.updated_text("1.9"), ("Sonus updated", "Sonus is on 1.9 now."))
+        self.assertEqual(notices.updated_text("1.9"), ("Sonus updated to 1.9", "Click to open the mixer."))
         self.assertEqual(notices.updated_text("", True),
-                         ("Sonus updated", "Sonus is on the latest version. Your local edits are in git stash."))
+                         ("Sonus updated", "Your local edits are in git stash."))
+        self.assertEqual(notices.updated_text("1.12.0", cava_next=True),
+                         ("Sonus updated to 1.12.0", "Next it asks for your password "
+                          "to install cava, which draws the visualizer."))
         self.assertEqual(notices.failed_text("could not reach github.com"),
-                         ("Sonus could not update", "Could not reach github.com."))
-        self.assertEqual(notices.failed_text("Nope!"), ("Sonus could not update", "Nope!"))
-        self.assertEqual(notices.failed_text(""), ("Sonus could not update", "The update failed."))
+                         ("Sonus couldn't update", "Could not reach github.com."))
+        self.assertEqual(notices.failed_text("Nope!"), ("Sonus couldn't update", "Nope!"))
+        self.assertEqual(notices.failed_text(""), ("Sonus couldn't update", "The update failed."))
 
     def test_the_slot_in_device_pixels(self):
         # Style.space(40) is 37 on this machine's UI scale.
@@ -499,6 +505,153 @@ class NoticesTest(unittest.TestCase):
         self.assertEqual(calls[1].args[4], 0)
         self.assertEqual(calls[2].args[4], 22)
         self.assertEqual(calls[3].args[4], 21)
+
+
+class RemoveTest(unittest.TestCase):
+    def test_stop_graph_takes_the_shortcut_out(self):
+        from sonus.engine import strip_shortcut
+        tmp = Path(tempfile.mkdtemp(prefix="sonus-binds-")) / "bindings.lua"
+        tmp.write_text('o.bind("SUPER + A", "A", "a")\n\n'
+                       '-- >>> sonus shortcut (written by Sonus; keeps Ctrl+Alt+V on the panel)\n'
+                       'hl.unbind("CTRL + ALT + V")\n'
+                       'o.bind("CTRL + ALT + V", "Sonus", "omarchy-shell sonus toggle")\n'
+                       '-- <<< sonus shortcut\n', encoding="utf-8")
+        self.assertTrue(strip_shortcut(tmp))
+        self.assertEqual(tmp.read_text(encoding="utf-8"), 'o.bind("SUPER + A", "A", "a")\n')
+        self.assertFalse(strip_shortcut(tmp))
+
+
+class CavaTest(unittest.TestCase):
+    """A password prompt for cava never comes out of nowhere: Sonus asks on
+    its own only right after an update said so, with the Visualizer on, and a
+    closed prompt is a no until the Install button."""
+
+    def setUp(self):
+        cava._state_path().unlink(missing_ok=True)
+
+    def test_it_asks_only_after_an_update_said_so(self):
+        with mock.patch.object(cava, "installed", return_value=False):
+            # A fresh install or a login: nothing on screen explains a prompt.
+            self.assertFalse(cava.should_ask(True))
+            cava.mark_pending("1.12.0")
+            self.assertTrue(cava.should_ask(True))
+            # The Visualizer switch is off: never.
+            self.assertFalse(cava.should_ask(False))
+            # Once a prompt showed, not again for that version.
+            cava.record(cava.Result(False, 1, message="pacman failed"), "1.12.0")
+            self.assertFalse(cava.should_ask(True))
+            cava.mark_pending("1.13.0")
+            self.assertTrue(cava.should_ask(True))
+        with mock.patch.object(cava, "installed", return_value=True):
+            self.assertFalse(cava.should_ask(True))
+
+    def test_an_old_update_does_not_ask(self):
+        with mock.patch.object(cava, "installed", return_value=False):
+            cava.write_state({"pending": "1.12.0", "at": time.time() - cava.PENDING_FRESH - 1})
+            self.assertFalse(cava.should_ask(True))
+
+    def test_a_no_is_for_good_until_the_button(self):
+        with mock.patch.object(cava, "installed", return_value=False):
+            cava.mark_pending("1.12.0")
+            cava.record(cava.Result(False, 126, message=cava.failure(126)), "1.12.0")
+            self.assertEqual(cava.read_state(), {"declined": True})
+            cava.mark_pending("1.13.0")
+            self.assertFalse(cava.should_ask(True))
+            self.assertFalse(cava.will_ask(True))
+            cava.forget_decline()
+            self.assertTrue(cava.will_ask(True))
+
+    def test_no_agent_is_not_a_no(self):
+        result = cava.Result(False, 127, no_agent=True, message=cava.failure(127, True))
+        self.assertFalse(result.declined)
+        self.assertFalse(result.prompted)
+        with mock.patch.object(cava, "installed", return_value=False):
+            cava.mark_pending("1.12.0")
+            cava.record(result, "1.12.0")
+            self.assertTrue(cava.should_ask(True))
+
+    def _install(self, code, stderr=""):
+        tools = {"pacman": "/usr/bin/pacman", "pkexec": "/usr/bin/pkexec", "systemd-run": "/usr/bin/systemd-run"}
+        runs = []
+
+        def run(argv, **kwargs):
+            runs.append(argv)
+            if argv[0] == "systemd-run":
+                return subprocess.CompletedProcess(argv, code, "", stderr)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+        with mock.patch.object(cava, "installed", return_value=False), \
+                mock.patch.object(cava, "running", return_value=False), \
+                mock.patch.object(cava.shutil, "which", side_effect=tools.get), \
+                mock.patch.object(cava.subprocess, "run", side_effect=run):
+            return cava.install(), next(argv for argv in runs if argv[0] == "systemd-run")
+
+    def test_a_closed_prompt_says_so(self):
+        result, unit = self._install(126)
+        self.assertTrue(result.declined)
+        self.assertEqual(result.message, "The password prompt was closed")
+        self.assertEqual(unit[-6:], ["pkexec", "pacman", "-S", "--needed", "--noconfirm", "cava"])
+        self.assertIn("--wait", unit)
+        self.assertIn("--pipe", unit)
+
+    def test_no_agent_is_told_apart(self):
+        result, _ = self._install(127, "Error executing command as another user: No authentication agent found.")
+        self.assertTrue(result.no_agent)
+        self.assertFalse(result.declined)
+
+    def test_a_pacman_failure_says_what_to_do(self):
+        result, _ = self._install(1)
+        self.assertTrue(result.prompted)
+        self.assertEqual(result.message,
+                         "pacman could not install cava. Update the system (omarchy update) and try again")
+
+    def test_without_pacman_it_asks_for_a_hand(self):
+        with mock.patch.object(cava, "installed", return_value=False), \
+                mock.patch.object(cava.shutil, "which", return_value=None):
+            result = cava.install()
+        self.assertEqual(result.message, "Install cava with your package manager")
+        self.assertFalse(result.prompted)
+
+    def test_an_engine_restarting_the_shell_leaves_it_to_the_next(self):
+        from sonus.engine import Engine
+        engine = mock.MagicMock()
+        engine._restarting = True
+        with mock.patch.object(cava, "install") as install, mock.patch.object(cava, "should_ask", return_value=True):
+            Engine.cava_startup(engine)
+        install.assert_not_called()
+        engine.install_cava.assert_not_called()
+
+    def test_after_an_update_it_asks(self):
+        from sonus.engine import Engine
+        engine = mock.MagicMock()
+        engine._restarting = False
+        with mock.patch.object(cava, "running", return_value=False), \
+                mock.patch.object(cava, "should_ask", return_value=True), \
+                mock.patch.object(time, "sleep"):
+            Engine.cava_startup(engine)
+        engine.install_cava.assert_called_once_with()
+
+    def test_startup_reports_cava_before_waiting_on_an_update(self):
+        from sonus.engine import Engine
+        engine = mock.MagicMock()
+        order = []
+        engine.emit_cava.side_effect = lambda: order.append("cava")
+        engine.resume_update.side_effect = lambda: order.append("update")
+        Engine.startup(engine)
+        self.assertEqual(order[:2], ["cava", "update"])
+
+    def test_an_update_marks_the_ask_only_with_the_visualizer_on(self):
+        from sonus.engine import Engine
+        for on in (True, False):
+            cava._state_path().unlink(missing_ok=True)
+            engine = mock.MagicMock()
+            engine.visualizer_on.return_value = on
+            with mock.patch.object(updater, "restart_shell", return_value=True), \
+                    mock.patch.object(cava, "installed", return_value=False), \
+                    mock.patch.object(notices, "updated") as notify:
+                Engine._report_update(engine, {"ok": True, "version": "1.12.0"})
+            notify.assert_called_once_with("1.12.0", False, cava_next=on)
+            self.assertEqual(cava.read_state().get("pending"), "1.12.0" if on else None)
 
 
 if __name__ == "__main__":

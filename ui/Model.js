@@ -425,19 +425,29 @@ function faderValue(x, width, step) {
 
 // ------------------------------------------------------------------ type
 
-// Monocraft draws each glyph on a grid nine of its pixels tall, every glyph
-// two thirds of that wide. Text lands on the screen's pixels only at a whole
-// multiple of nine, so the panel's text comes in two sizes: running text at
-// the multiple nearest the shell's body size, titles at twice that.
-var MONO_EM = 9
-
-function monoSize(body) {
-  return MONO_EM * Math.max(1, Math.round((Number(body) || MONO_EM) / MONO_EM))
+// The kit's MonoText (ui/MonoText.qml) draws Monocraft Sonus, ten font
+// pixels to the em, with each font pixel a whole number of device pixels:
+// `monoCell` cells for a step at a window scale `dpr`. The same formula as
+// MonoText.cellFor, here so the panel can size a column before any text
+// exists. A character is six font pixels wide, a line eleven.
+function monoCell(step, dpr) {
+  var d = Number(dpr) > 0 ? Number(dpr) : 1
+  var small = Math.max(1, Math.round(d))
+  var body = Math.max(small + 1, Math.round(1.5 * d))
+  if (step === "small") return small
+  if (step === "title") return Math.max(body + 1, Math.round(2 * d))
+  return body
 }
 
-// How many characters of Monocraft at `size` fit across `width`.
-function monoColumns(width, size) {
-  return Math.max(1, Math.floor((Number(width) || 0) / (size * 2 / 3) + 0.001))
+// One character across, in logical pixels.
+function monoAdvance(step, dpr) {
+  var d = Number(dpr) > 0 ? Number(dpr) : 1
+  return 6 * monoCell(step, d) / d
+}
+
+// How many characters `advance` wide fit across `width`.
+function monoColumns(width, advance) {
+  return Math.max(1, Math.floor((Number(width) || 0) / (Number(advance) || 6) + 0.001))
 }
 
 // `text` broken into lines of at most `cols` characters for a monospaced
@@ -472,6 +482,24 @@ function wrapName(text, cols) {
     line = word
   }
   if (line !== "") lines.push(line)
+  // A word of one or two letters alone on the last line ("Counter-Strike" /
+  // "2") reads as cut off: give it company from the line above, the last
+  // word there, or the last joint of a long one ("Counter-" / "Strike 2").
+  var n = lines.length
+  if (n > 1 && lines[n - 1].length <= 2 && lines[n - 1].indexOf(" ") < 0) {
+    var prev = lines[n - 2]
+    var space = prev.lastIndexOf(" ")
+    var cut = -1
+    if (space > 0) cut = space + 1
+    else for (var p = prev.length - 1; p >= 1; p--) if ("_.-/:".indexOf(prev.charAt(p - 1)) >= 0) { cut = p; break }
+    if (cut > 0) {
+      var tail = prev.substring(cut)
+      if (tail.length + 1 + lines[n - 1].length <= cols) {
+        lines[n - 2] = prev.substring(0, space > 0 ? space : cut)
+        lines[n - 1] = tail + " " + lines[n - 1]
+      }
+    }
+  }
   return lines.join("\n")
 }
 
@@ -556,4 +584,37 @@ function hoverRows(state) {
                 volume: volumes[c.key], muted: !!muted[c.key], mark: markFor(!!muted[c.key], false, !!c.eq) })
   })
   return rows
+}
+
+// ------------------------------------------------------------ spectrum
+
+// cava sends each band as 0..RANGE at a fixed sensitivity, with headroom for
+// the loudest music; its own auto sensitivity is off, since it overshoots for
+// the first seconds after it starts (and the panel is often open for only a
+// few) and then takes half a minute to climb back after a loud passage.
+// Instead each frame is scaled against a ceiling that jumps to the loudest
+// band and falls back DECAY a frame, about a second and a half to halve at
+// cava's FPS frames (0.984 ^ 43), so a song turned down (Spotify at 20%, Aux low) fills the
+// room as a loud one does. RANGE is large so quiet music keeps its detail;
+// FLOOR keeps a near-silent output from being blown up into full bars.
+// cava's levels are linear, where the bass towers over everything else; a
+// CURVE under one lifts the quieter bands the way an ear hears them.
+var SPECTRUM = { RANGE: 100000, SENSITIVITY: 1000, FPS: 30, DECAY: 0.984, FLOOR: 150, CURVE: 0.6 }
+
+// One line of cava's ascii output ("12;300;7;") as `bars` levels 0..rows,
+// and the ceiling to hand the next frame.
+function spectrumFrame(line, bars, rows, ceiling) {
+  var parts = String(line || "").split(";")
+  var raw = []
+  var peak = 0
+  for (var i = 0; i < bars; i++) {
+    var v = Math.max(0, Math.min(SPECTRUM.RANGE, parseInt(parts[i], 10) || 0))
+    raw.push(v)
+    if (v > peak) peak = v
+  }
+  var next = Math.max(peak, (Number(ceiling) || 0) * SPECTRUM.DECAY, SPECTRUM.FLOOR)
+  return {
+    levels: raw.map(function(v) { return Math.min(rows, Math.round(Math.pow(v / next, SPECTRUM.CURVE) * rows)) }),
+    ceiling: next
+  }
 }

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -47,7 +48,11 @@ Item {
   readonly property real pointerValue: area.containsMouse || dragging
     ? Model.faderValue(area.mouseX - cellRow.x, cellRow.width, step) : -1
 
-  readonly property real line: Math.max(1, Style.space(1))
+  // Everything inside is laid out in whole device pixels, as the spectrum
+  // is: on a 1.25 screen fractional cells and gaps blur together, and a thin
+  // app meter's cells merge into one bar.
+  readonly property real dpr: Window.window && Window.window.devicePixelRatio > 0 ? Window.window.devicePixelRatio : 1
+  readonly property real line: Math.max(1, Math.round(Style.space(1) * dpr)) / dpr
   readonly property real inset: small ? Math.max(1, Style.space(1)) : Math.max(2, Style.space(2))
   readonly property real gap: small ? Math.max(1, Style.space(1)) : Math.max(2, Style.space(2))
 
@@ -105,12 +110,43 @@ Item {
     moved(v)
   }
 
-  Component.onCompleted: shown = known ? level : 0
+  Component.onCompleted: { shown = known ? level : 0; snap() }
+
+  // How far the cells move to start on a whole device pixel, checked after
+  // each frame the window draws, as PixelIcon does.
+  property real snapX: 0
+  property real snapY: 0
+
+  function snap() {
+    if (!visible) return
+    var p = body.mapToItem(null, 0, 0)
+    var dx = Math.round(p.x * dpr) / dpr - p.x
+    var dy = Math.round(p.y * dpr) / dpr - p.y
+    if (Math.abs(dx - snapX) > 0.001) snapX = dx
+    if (Math.abs(dy - snapY) > 0.001) snapY = dy
+  }
+
+  Connections {
+    target: meter.Window.window
+    ignoreUnknownSignals: true
+    function onAfterAnimating() { meter.snap() }
+  }
+
+  // Slides to the level as it is now. The target is set here rather than
+  // bound: this runs from onLevelChanged, which can come before a binding on
+  // `level` has updated, and the slide would then head for the level before.
+  // On the wheel that drew every step one behind, so a turn the other way
+  // first went one more step the old way.
+  function slide() {
+    settle.stop()
+    settle.to = level
+    settle.start()
+  }
 
   onLevelChanged: {
     if (fillIn.running || dragging) return
     if (Style.reduceMotion || !host.opened) { shown = level; return }
-    settle.restart()
+    slide()
   }
 
   SequentialAnimation {
@@ -118,14 +154,13 @@ Item {
     PauseAnimation { duration: Style.duration(meter.delay) }
     NumberAnimation { target: meter; property: "shown"; to: meter.level; duration: Style.duration(680); easing.type: Easing.OutCubic }
     // The level may have moved on while it filled in.
-    ScriptAction { script: if (meter.shown !== meter.level) settle.restart() }
+    ScriptAction { script: if (meter.shown !== meter.level) meter.slide() }
   }
 
   NumberAnimation {
     id: settle
     target: meter
     property: "shown"
-    to: meter.level
     duration: Style.duration(420)
     easing.type: Easing.OutCubic
   }
@@ -140,15 +175,26 @@ Item {
     border.color: Qt.rgba(meter.tone.r, meter.tone.g, meter.tone.b, meter.known && !meter.dimmed ? (meter.hot ? 0.85 : 0.6) : 0.3)
     opacity: meter.dimmed ? 0.5 : 1
 
-    Row {
+    Item {
       id: cellRow
-      x: meter.line + meter.inset
-      y: meter.line + meter.inset
-      width: body.width - x * 2
-      height: body.height - y * 2
-      spacing: meter.gap
+      readonly property real dpr: meter.dpr
+      readonly property int edgePx: Math.round((meter.line + meter.inset) * dpr)
+      readonly property int gapPx: Math.max(1, Math.round(meter.gap * dpr))
+      readonly property int innerPx: Math.max(0, Math.floor(body.width * dpr) - edgePx * 2)
+      readonly property int cellPx: Math.max(1, Math.floor((innerPx - gapPx * (meter.segments - 1)) / meter.segments))
+      // The pixels the cells do not divide evenly go one each to the first cells.
+      readonly property int extraPx: Math.max(0, innerPx - cellPx * meter.segments - gapPx * (meter.segments - 1))
+      readonly property real cellWidth: cellPx / dpr
+      // Plus whatever puts the row on a whole device pixel of the window: the
+      // meter itself sits wherever the room's layout puts it.
+      x: edgePx / dpr + meter.snapX
+      y: edgePx / dpr + meter.snapY
+      width: innerPx / dpr
+      height: Math.max(0, Math.floor(body.height * dpr) - edgePx * 2) / dpr
 
-      readonly property real cellWidth: (width - spacing * (meter.segments - 1)) / meter.segments
+      function cellX(i) { return (i * (cellPx + gapPx) + Math.min(i, extraPx)) / dpr }
+      function cellPxOf(i) { return cellPx + (i < extraPx ? 1 : 0) }
+      function cellW(i) { return cellPxOf(i) / dpr }
 
       Repeater {
         model: meter.segments
@@ -158,7 +204,8 @@ Item {
           required property int index
           readonly property var c: meter.cells[index] || ({ fill: 0, glow: 0, press: 0 })
 
-          width: cellRow.cellWidth
+          x: cellRow.cellX(index)
+          width: cellRow.cellW(index)
           height: cellRow.height
           // A cell gives under the pointer, as Weave's tiles do.
           scale: 1 - cell.c.press * 0.14
@@ -170,7 +217,9 @@ Item {
           }
 
           Rectangle {
-            width: parent.width * cell.c.fill
+            readonly property int px: Math.round(cellRow.cellPxOf(cell.index) * cell.c.fill)
+            visible: px > 0
+            width: px / cellRow.dpr
             height: parent.height
             color: meter.tone
             antialiasing: false
@@ -225,7 +274,7 @@ Item {
       meter.press(mouse.x, mouse.y)
       meter.setFrom(mouse.x)
     }
-    onReleased: if (meter.shown !== meter.level) settle.restart()
+    onReleased: if (meter.shown !== meter.level) meter.slide()
   }
 
   PanelToolTip {

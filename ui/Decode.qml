@@ -3,8 +3,9 @@ import qs.Commons
 import "Model.js" as Model
 
 // Text that decodes into place, a terminal's way, when the panel opens.
-// Later changes just swap, so a line that changes stays easy to read.
-Text {
+// Later changes just swap, so a line that changes stays easy to read. A
+// MonoText, so it lands on whole device pixels; give it a step and family.
+MonoText {
   id: dec
 
   required property var host

@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "ui", "Audio.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Audio = new Function(source + "\nreturn { volumeName, eqWord, appsLine, toOutput, othersLine, channelState, deviceState, bucketLine, movingLine, fitted, heroPhrases, dropLine, movedLine, switchedLine, eqLine }")()
+const Audio = new Function(source + "\nreturn { volumeName, eqWord, appsLine, toOutput, othersLine, channelState, deviceState, bucketLine, movingLine, fitted, fitsLines, heroPhrases, dropLine, movedLine, switchedLine, eqLine }")()
 
 const glyphSource = fs.readFileSync(path.join(__dirname, "..", "ui", "Glyphs.js"), "utf8").replace(/^\.pragma library\s*/, "")
 const Glyphs = new Function(glyphSource + "\nreturn { deviceGlyph, channel, speaker, chat, gamepad, music, aux, noChannel }")()
@@ -85,3 +85,11 @@ assert.ok(Audio.eqLine(true, "", boost, -3).includes("clip"))
 assert.strictEqual(Audio.eqLine(false, "", boost, -3), "Bypassed")
 
 console.log("audio ok")
+
+// A name with a word wider than the hero's column gives way, rather than
+// breaking in the middle; two short lines still fit.
+assert.strictEqual(Audio.fitted("On alsa_output.pci-0000_00_1f.3", ""), "")
+assert.strictEqual(Audio.fitted("Playing through AirPods Pro", "Output switched"), "Playing through AirPods Pro")
+assert.strictEqual(Audio.fitted("Playing through Bose QuietComfort Ultra Headphones", "Output switched"), "Output switched")
+assert.ok(Audio.fitsLines("aaaa bbbb", 4, 2))
+assert.ok(!Audio.fitsLines("aaaa bbbb cc", 4, 2))

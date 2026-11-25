@@ -81,7 +81,9 @@ Grid {
         playDelay: 40 + pick.index * 60
       }
 
-      Text {
+      MonoText {
+        step: "body"
+        fontFamily: list.host.fontFamily
         id: pickName
         anchors.left: parent.left
         anchors.leftMargin: list.host.snap(list.host.roomPad + Style.font.title + Style.space(8))
@@ -90,11 +92,8 @@ Grid {
         anchors.verticalCenter: parent.verticalCenter
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
-        text: Model.wrapName(pick.modelData.label || "Unknown", Model.monoColumns(width, list.host.textSize))
+        text: Model.wrapName(pick.modelData.label || "Unknown", Model.monoColumns(width, advance))
         color: pick.current || pick.lit ? list.host.fg : list.host.dim
-        font.family: list.host.fontFamily
-        font.pixelSize: list.host.textSize
-        renderType: Text.NativeRendering
         onImplicitHeightChanged: Qt.callLater(list.measure)
         Component.onCompleted: Qt.callLater(list.measure)
       }

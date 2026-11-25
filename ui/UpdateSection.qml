@@ -89,11 +89,10 @@ Column {
     Repeater {
       model: section.notes
 
+      // In full: a note cut short says nothing.
       Caption {
         required property string modelData
         width: parent.width
-        maximumLineCount: 2
-        elide: Text.ElideRight
         text: "· " + modelData
         foreground: section.foreground
         opacity: 0.7

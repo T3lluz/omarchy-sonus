@@ -14,7 +14,7 @@ Item {
   property real size: 9
   property int unit: 0
 
-  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  readonly property real dpr: Window.window && Window.window.devicePixelRatio > 0 ? Window.window.devicePixelRatio : 1
   readonly property int px: unit > 0 ? unit : Math.max(1, Math.round(size * dpr / 5))
   readonly property real cell: px / dpr
   readonly property var shape: Model.pixelText(text)
@@ -22,17 +22,45 @@ Item {
   implicitWidth: shape.width * cell
   implicitHeight: shape.height * cell
 
-  Repeater {
-    model: line.shape.rects
+  // Starts on a whole device pixel wherever the layout puts it, checked after
+  // each frame the window draws, as PixelIcon does.
+  property real snapX: 0
+  property real snapY: 0
 
-    Rectangle {
-      required property var modelData
-      x: modelData[0] * line.cell
-      y: modelData[1] * line.cell
-      width: modelData[2] * line.cell
-      height: modelData[3] * line.cell
-      color: line.color
-      antialiasing: false
+  function snap() {
+    if (!visible) return
+    var p = line.mapToItem(null, 0, 0)
+    var dx = Math.round(p.x * dpr) / dpr - p.x
+    var dy = Math.round(p.y * dpr) / dpr - p.y
+    if (Math.abs(dx - snapX) > 0.001) snapX = dx
+    if (Math.abs(dy - snapY) > 0.001) snapY = dy
+  }
+
+  Component.onCompleted: snap()
+
+  Connections {
+    target: line.Window.window
+    ignoreUnknownSignals: true
+    function onAfterAnimating() { line.snap() }
+  }
+
+  Item {
+    x: line.snapX
+    y: line.snapY
+
+    Repeater {
+      model: line.shape.rects.length
+
+      Rectangle {
+        required property int index
+        readonly property var q: line.shape.rects[index] || [0, 0, 0, 0]
+        x: q[0] * line.cell
+        y: q[1] * line.cell
+        width: q[2] * line.cell
+        height: q[3] * line.cell
+        color: line.color
+        antialiasing: false
+      }
     }
   }
 }

@@ -270,7 +270,9 @@ Column {
     Repeater {
       model: [["+18", -18], ["0", 0], ["-18", 18]]
 
-      Text {
+      MonoText {
+        step: "small"
+        fontFamily: view.host.fontFamily
         required property var modelData
         readonly property real knob: Math.max(12, Math.round(Style.spacing.controlHeight * 0.38))
         x: 0
@@ -279,9 +281,6 @@ Column {
         y: bandArea.topY + knob / 2 + (bandArea.bottomY - bandArea.topY - knob) * (modelData[1] + 18) / 36 - height / 2
         text: modelData[0]
         color: view.host.dim
-        font.family: view.host.fontFamily
-        font.pixelSize: view.host.textSize
-        renderType: Text.NativeRendering
       }
     }
 
@@ -317,7 +316,9 @@ Column {
     Repeater {
       model: Eq.BAND_COUNT
 
-      Text {
+      MonoText {
+        step: "small"
+        fontFamily: view.host.fontFamily
         required property int index
         readonly property real gain: view.gains[index] || 0
         x: bandArea.x0 + bandArea.col * index
@@ -326,16 +327,15 @@ Column {
         horizontalAlignment: Text.AlignHCenter
         text: Eq.gainText(gain)
         color: gain !== 0 && view.eqEnabled ? view.host.fg : view.host.dim
-        font.family: view.host.fontFamily
-        font.pixelSize: view.host.textSize
-        renderType: Text.NativeRendering
       }
     }
 
     Repeater {
       model: Eq.BAND_LABELS
 
-      Text {
+      MonoText {
+        step: "small"
+        fontFamily: view.host.fontFamily
         required property int index
         required property var modelData
         x: bandArea.x0 + bandArea.col * index
@@ -344,9 +344,6 @@ Column {
         horizontalAlignment: Text.AlignHCenter
         text: modelData
         color: view.band === index ? view.host.fg : view.host.dim
-        font.family: view.host.fontFamily
-        font.pixelSize: view.host.textSize
-        renderType: Text.NativeRendering
       }
     }
   }
@@ -359,7 +356,9 @@ Column {
     width: parent.width
     implicitHeight: Math.max(preSlider.implicitHeight, resetButton.implicitHeight)
 
-    Text {
+    MonoText {
+      step: "body"
+      fontFamily: view.host.fontFamily
       id: preLabel
       anchors.left: parent.left
       anchors.leftMargin: view.host.roomPad
@@ -368,9 +367,6 @@ Column {
       text: "Preamp"
       color: view.host.fg
       opacity: 0.6
-      font.family: view.host.fontFamily
-      font.pixelSize: view.host.textSize
-      renderType: Text.NativeRendering
     }
 
     PanelSlider {
@@ -397,7 +393,9 @@ Column {
       }
     }
 
-    Text {
+    MonoText {
+      step: "small"
+      fontFamily: view.host.fontFamily
       id: preValue
       anchors.right: resetButton.left
       anchors.rightMargin: Style.space(10)
@@ -405,9 +403,6 @@ Column {
       textFormat: Text.PlainText
       text: Eq.dbText(preSlider.dragging ? preSlider.liveValue : view.preamp)
       color: view.host.dim
-      font.family: view.host.fontFamily
-      font.pixelSize: view.host.textSize
-      renderType: Text.NativeRendering
     }
 
     Button {
